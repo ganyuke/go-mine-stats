@@ -1,0 +1,9 @@
+{
+    "server_path": "../../example-mc",
+    "world_name": "world",
+    "polling_speed": 5,
+    "api": {
+        "default_response_limit": 5,
+        "max_response_limit": 100
+    }
+}
