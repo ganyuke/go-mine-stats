@@ -33,7 +33,8 @@ func Init_db() {
 		date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		stat_category TEXT NOT NULL,
 		stat_name TEXT NOT NULL,
-		value INTEGER NOT NULL
+		value INTEGER NOT NULL,
+		world TEXT NOT NULL
 	);	
 	CREATE TABLE historical_stats (
 			num INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -41,7 +42,8 @@ func Init_db() {
 			date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			stat_category TEXT NOT NULL,
 			stat_name TEXT NOT NULL,
-			value INTEGER NOT NULL
+			value INTEGER NOT NULL,
+			world TEXT NOT NULL
 		);
 	`
 
@@ -67,28 +69,41 @@ type Checkers struct {
 	Chess int
 }
 
-func Update_player_stat(uuid, category, item string, value int) {
+func UpdatePlayerStat(uuid, date, category, item, world string, value int) {
 
 	log.Println("Inserting in " + category + " the item " + item + " for player " + uuid)
 
 	db := get_database()
 
-	check_row, err := db.Prepare("SELECT EXISTS(SELECT 1 FROM stats WHERE uuid = ? AND stat_category = ? AND stat_name = ? AND value = ? LIMIT 1);")
+	check_row, err := db.Prepare(
+		`SELECT EXISTS(
+			SELECT 1 
+			FROM stats 
+			WHERE uuid = ? AND stat_category = ? AND stat_name = ? AND value = ? AND world = ?
+			LIMIT 1);
+		`)
 	log_error(err, "Error while checking if row exists")
 
 	var check_obj Checkers
 
-	check_row.QueryRow(uuid, category, item, value).Scan(&check_obj.Chess)
+	check_row.QueryRow(uuid, category, item, value, world).Scan(&check_obj.Chess)
 
 	// Drop change if row is exactly the same.
 	if check_obj.Chess == 1 {
+		log.Println("No difference in statistic, dropping change...")
 		return
 	}
 
-	check_row, err = db.Prepare("SELECT EXISTS(SELECT 1 FROM stats WHERE uuid = ? AND stat_category = ? AND stat_name = ? LIMIT 1);")
+	check_row, err = db.Prepare(
+		`SELECT EXISTS(
+			SELECT 1 
+			FROM stats 
+			WHERE uuid = ? AND stat_category = ? AND stat_name = ? AND world = ?
+			LIMIT 1);
+		`)
 	log_error(err, "Error while checking if row exists")
 
-	check_row.QueryRow(uuid, category, item).Scan(&check_obj.Chess)
+	check_row.QueryRow(uuid, category, item, world).Scan(&check_obj.Chess)
 
 	// Check if the statistic already exists in the current stat table
 	if check_obj.Chess == 1 {
@@ -96,33 +111,33 @@ func Update_player_stat(uuid, category, item string, value int) {
 		update_row :=
 			`
 			UPDATE stats
-			SET date = CURRENT_TIMESTAMP, value = ?
-			WHERE uuid = ? AND stat_category = ? AND stat_name = ?
+			SET date = ?, value = ?
+			WHERE uuid = ? AND stat_category = ? AND stat_name = ? AND world = ?
 			`
 		prep, err := db.Prepare(update_row)
 		log_error(err, "Error while preparing to update player data:")
-		_, err = prep.Exec(value, uuid, category, item)
+		_, err = prep.Exec(date, value, uuid, category, item, world)
 		log_error(err, "Error while updating player data:")
 	} else {
 		log.Println("Row not found, creating new stat...")
-		prep, err := db.Prepare("INSERT INTO stats (uuid, stat_category, stat_name, value) VALUES (?, ?, ?, ?)")
+		prep, err := db.Prepare("INSERT INTO stats (uuid, date, stat_category, stat_name, value, world) VALUES (?, ?, ?, ?, ?, ?)")
 		log_error(err, "Error while preparing to insert historical player data:")
-		_, err = prep.Exec(uuid, category, item, value)
+		_, err = prep.Exec(uuid, date, category, item, value, world)
 		log_error(err, "Error while inserting historical player data:")
 	}
 
 	// Add statistic to tracking over time
-	prep, err := db.Prepare("INSERT INTO historical_stats (uuid, stat_category, stat_name, value) VALUES (?, ?, ?, ?)")
+	prep, err := db.Prepare("INSERT INTO historical_stats (uuid, date, stat_category, stat_name, value, world) VALUES (?, ?, ?, ?, ?, ?)")
 	log_error(err, "Error while preparing to insert player data:")
 
-	_, err = prep.Exec(uuid, category, item, value)
+	_, err = prep.Exec(uuid, date, category, item, value, world)
 	log_error(err, "Error while inserting player data:")
 
 	defer db.Close()
 
 }
 
-func Retrieve_player_stat(uuid, category, item string) (stat_item, error) {
+func RetrievePlayerStat(uuid, category, item, world string) (stat_item, error) {
 
 	log.Println("Retrieving player " + uuid + " stat for " + item + " in category " + category)
 
@@ -131,14 +146,14 @@ func Retrieve_player_stat(uuid, category, item string) (stat_item, error) {
 	default_select :=
 		`SELECT uuid, stat_category, stat_name, value, date 
 	FROM stats 
-	WHERE uuid = ? AND stat_category = ? AND stat_name = ?
+	WHERE uuid = ? AND stat_category = ? AND stat_name = ? AND world = ?
 	ORDER BY date DESC 
 	LIMIT 1`
 
 	prep, err := db.Prepare(default_select)
 	log_error(err, "Error while preparing to read player data:")
 
-	row := prep.QueryRow(uuid, category, item)
+	row := prep.QueryRow(uuid, category, item, world)
 
 	var stat_obj stat_item
 
@@ -180,14 +195,14 @@ func make_list(rows *sql.Rows) []stat_item {
 
 }
 
-func Get_extrema(category, item, query_date, order, limit string) []stat_item {
+func GetExtrema(category, item, world, order, limit string) []stat_item {
 
 	log.Println("Retrieving extrema stat for " + item + " in category " + category)
 
 	sql_statement :=
 		`SELECT uuid, stat_category, stat_name, value, date
 		FROM stats
-		WHERE stat_category = ? AND stat_name = ?
+		WHERE stat_category = ? AND stat_name = ? AND world = ?
 		GROUP BY uuid
 		ORDER BY value ` + order + `
 		LIMIT ?`
@@ -196,7 +211,7 @@ func Get_extrema(category, item, query_date, order, limit string) []stat_item {
 
 	prep := prepare_statement(sql_statement, db)
 
-	rows, err := prep.Query(category, item, limit)
+	rows, err := prep.Query(category, item, world, limit)
 	log_error(err, "Error while querying player data:")
 
 	defer db.Close()
@@ -205,14 +220,14 @@ func Get_extrema(category, item, query_date, order, limit string) []stat_item {
 
 }
 
-func Get_stats_for_category(category, query_date, order, limit string) []stat_item {
+func GetStatsForCategory(category, world, order, limit string) []stat_item {
 
 	log.Println("Retrieving extrema stats for category " + category)
 
 	sql_statement :=
 		`SELECT uuid, stat_category, stat_name, value, date
 		FROM stats
-		WHERE stat_category = ?
+		WHERE stat_category = ? AND world = ?
 		GROUP BY uuid
 		ORDER BY value ` + order + `
 		LIMIT ?`
@@ -221,7 +236,7 @@ func Get_stats_for_category(category, query_date, order, limit string) []stat_it
 
 	prep := prepare_statement(sql_statement, db)
 
-	rows, err := prep.Query(category, limit)
+	rows, err := prep.Query(category, world, limit)
 	log_error(err, "Error while querying player data:")
 
 	defer db.Close()
@@ -229,28 +244,3 @@ func Get_stats_for_category(category, query_date, order, limit string) []stat_it
 	return make_list(rows)
 
 }
-
-// func get_stats_for_player(uuid, query_date, order, limit string) []stat_item {
-
-// 	log.Println("Retrieving all stats for player " + uuid)
-
-// 	sql_statement :=
-// 		`SELECT uuid, stat_category, stat_name, value, date
-// 		FROM stats
-// 		WHERE uuid = ?
-// 		GROUP BY uuid
-// 		ORDER BY value ` + order + `
-// 		LIMIT ?`
-
-// 	db := get_database()
-
-// 	prep := prepare_statement(sql_statement, db)
-
-// 	rows, err := prep.Query(uuid, limit)
-// 	log_error(err, "Error while querying player data:")
-
-// 	defer db.Close()
-
-// 	return make_list(rows)
-
-// }

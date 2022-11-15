@@ -4,6 +4,7 @@ import (
 	"go-mine-stats/src/config"
 	"go-mine-stats/src/db"
 	"go-mine-stats/src/stats"
+	"log"
 	"os"
 	"strconv"
 
@@ -12,7 +13,11 @@ import (
 
 func main() {
 
-	config.Config_file = config.Load_config()
+	config.Config_file = config.LoadConfig()
+
+	if config.SanityCheck(config.Config_file) {
+		log.Println("Config passed sanity check.")
+	}
 
 	MaxRespLimit := config.Config_file.API.MaxRespLimit
 	MaxRespString := strconv.Itoa(MaxRespLimit)
@@ -23,14 +28,12 @@ func main() {
 	if _, err := os.Stat("./stats.db"); err != nil {
 		db.Init_db()
 
-		stats.Collect_all_stats(true)
+		stats.CollectAllStats(true)
 	} else {
-		stats.Collect_all_stats(false)
+		stats.CollectAllStats(false)
 	}
 
-	app := fiber.New(fiber.Config{
-		Immutable: true,
-	})
+	app := fiber.New()
 
 	api := app.Group("/api")
 
@@ -47,19 +50,19 @@ func main() {
 			if c.Query("stat") == "all" { // Return statistics data in a given category
 				switch {
 				default: // hopefully prevent SQL injection
-					statistic := db.Get_stats_for_category(c.Params("category"), c.Query("date"), "DESC", limit)
+					statistic := db.GetStatsForCategory(c.Params("category"), c.Query("world"), "DESC", limit)
 					return c.JSON(statistic)
 				case sort == "max":
-					statistic := db.Get_stats_for_category(c.Params("category"), c.Query("date"), "DESC", limit)
+					statistic := db.GetStatsForCategory(c.Params("category"), c.Query("world"), "DESC", limit)
 					return c.JSON(statistic)
 				case sort == "min":
-					statistic := db.Get_stats_for_category(c.Params("category"), c.Query("date"), "ASC", limit)
+					statistic := db.GetStatsForCategory(c.Params("category"), c.Query("world"), "ASC", limit)
 					return c.JSON(statistic)
 				case sort != "":
 					return c.SendString("Error: invalid 'sort' parameter.")
 				}
 			} else if c.Query("uuid") != "" && c.Query("stat") != "" { // Return specific statistic data from player
-				statistic, err := db.Retrieve_player_stat(c.Query("uuid"), c.Params("category"), c.Query("stat"))
+				statistic, err := db.RetrievePlayerStat(c.Query("uuid"), c.Params("category"), c.Query("stat"), c.Query("world"))
 				if err != nil {
 					return c.SendString("Error: row not found.")
 				}
@@ -67,20 +70,18 @@ func main() {
 			} else if c.Query("sort") != "" && c.Query("stat") != "" { // Return all players' data in specific statistic
 				switch {
 				default: // hopefully prevent SQL injection
-					statistic := db.Get_extrema(c.Params("category"), c.Query("stat"), c.Query("date"), "DESC", limit)
+					statistic := db.GetExtrema(c.Params("category"), c.Query("stat"), c.Query("world"), "DESC", limit)
 					return c.JSON(statistic)
 				case sort == "max":
-					statistic := db.Get_extrema(c.Params("category"), c.Query("stat"), c.Query("date"), "DESC", limit)
+					statistic := db.GetExtrema(c.Params("category"), c.Query("stat"), c.Query("world"), "DESC", limit)
 					return c.JSON(statistic)
 				case sort == "min":
-					statistic := db.Get_extrema(c.Params("category"), c.Query("stat"), c.Query("date"), "ASC", limit)
+					statistic := db.GetExtrema(c.Params("category"), c.Query("stat"), c.Query("world"), "ASC", limit)
 					return c.JSON(statistic)
 				case sort != "":
 					return c.SendString("Error: invalid 'sort' parameter.")
 				}
 			}
-		} else { // Return all statistics in all categories
-			return c.SendString("Assume all stats")
 		}
 		return c.SendString("Bruh")
 	})

@@ -1,9 +1,16 @@
 {
-    "server_path": "../../example-mc",
-    "world_name": "world",
-    "polling_speed": 5,
+    "server_list": [
+        {
+            "server_path": "../../example-mc",
+            "world_name": "world"
+        }
+    ],
     "api": {
         "default_response_limit": 5,
         "max_response_limit": 100
+    },
+    "polling": {
+        "polling_speed": 5,
+        "blacklist": []
     }
 }

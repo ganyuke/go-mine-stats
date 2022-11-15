@@ -18,7 +18,7 @@ type pollster struct {
 }
 
 func Init_poll_official() *pollster {
-	polling_center := &pollster{ticker: time.NewTicker(time.Minute * time.Duration(config.Config_file.PollSpeed)), new: make(chan string)}
+	polling_center := &pollster{ticker: time.NewTicker(time.Minute * time.Duration(config.Config_file.Scan.PollSpeed)), new: make(chan string)}
 	go polling_center.Vote()
 	return polling_center
 }
@@ -28,22 +28,22 @@ func (pollster_object *pollster) Vote() {
 		select {
 		case <-pollster_object.ticker.C:
 			for _, v := range pollster_object.watching {
-				go Poll_json(v)
+				go pollDir(v)
 			}
-		case new_file := <-pollster_object.new:
-			pollster_object.watching = append(pollster_object.watching, new_file)
-			println("Now monitoring file: " + new_file)
+		case new_dir := <-pollster_object.new:
+			pollster_object.watching = append(pollster_object.watching, new_dir)
+			println("Now monitoring directory: " + new_dir)
 		}
 	}
 }
 
-func (pollster_object *pollster) Monitor(new_file string) {
-	pollster_object.new <- new_file
+func (pollster_object *pollster) Monitor(new_dir string) {
+	pollster_object.new <- new_dir
 }
 
-func (pollster_object *pollster) Remove(file string) {
+func (pollster_object *pollster) Remove(dir string) {
 	for i, v := range pollster_object.watching {
-		if v == file {
+		if v == dir {
 			pollster_object.watching = append(pollster_object.watching[:i], pollster_object.watching[i+1:]...)
 		}
 	}

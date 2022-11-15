@@ -21,14 +21,23 @@ type api_config_struct struct {
 	MaxRespLimit     int `json:"max_response_limit"`
 }
 
-type config_struct struct {
-	ServerPath string            `json:"server_path"`
-	WorldName  string            `json:"world_name"`
-	PollSpeed  int               `json:"polling_speed"`
-	API        api_config_struct `json:"api"`
+type scan_config_struct struct {
+	PollSpeed int      `json:"polling_speed"`
+	Blacklist []string `json:"blacklist"`
 }
 
-func Load_config() *config_struct {
+type server_config_struct struct {
+	ServerPath string `json:"server_path"`
+	WorldName  string `json:"world_name"`
+}
+
+type config_struct struct {
+	ServerList []server_config_struct `json:"server_list"`
+	API        api_config_struct      `json:"api"`
+	Scan       scan_config_struct     `json:"polling"`
+}
+
+func LoadConfig() *config_struct {
 	config_json, err := os.ReadFile("../../config.json")
 	log_error(err, "Error while reading config file:")
 
@@ -37,4 +46,18 @@ func Load_config() *config_struct {
 	log_error(err, "Error while unmarshaling config file:")
 
 	return &config
+}
+
+func SanityCheck(config_file *config_struct) bool {
+	var world_name_list []string
+	for _, server_object := range config_file.ServerList {
+		for _, world_name_exist := range world_name_list {
+			if server_object.WorldName == world_name_exist {
+				log.Fatal("Error: Duplicate 'world_names' detected! Please change the name of your world.")
+			}
+		}
+		world_name_list = append(world_name_list, server_object.WorldName)
+	}
+
+	return true
 }
