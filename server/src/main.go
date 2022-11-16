@@ -26,10 +26,12 @@ func main() {
 	stats.Poll_official = stats.Init_poll_official()
 
 	if _, err := os.Stat("./stats.db"); err != nil {
-		db.Init_db()
+		db.Monika = db.DbConnect(true)
 
 		stats.CollectAllStats(true)
 	} else {
+		db.Monika = db.DbConnect(false)
+
 		stats.CollectAllStats(false)
 	}
 
