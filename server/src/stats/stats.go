@@ -31,7 +31,7 @@ type old_file_info struct {
 	date map[string]time.Time
 }
 
-func collectPlayerStat(file_location, uuid, world, date string) player_statistics {
+func collectPlayerStat(file_location, uuid, world string, date int64) player_statistics {
 
 	file, err := os.ReadFile(file_location)
 	log_error(err, "Error while reading player statistic file:")
@@ -40,11 +40,23 @@ func collectPlayerStat(file_location, uuid, world, date string) player_statistic
 	err = json.Unmarshal(file, &player_stat_data)
 	log_error(err, "Error while unmarshaling player statistic file:")
 
+	var new_stats []*db.Stat_item
+
 	for category, items := range player_stat_data.Stats {
 		for statistic, value := range items {
-			db.UpdatePlayerStat(uuid, date, category, statistic, world, value)
+			player_stat := &db.Stat_item{
+				Uuid:     uuid,
+				Date:     date,
+				Category: category,
+				Item:     statistic,
+				Value:    value,
+				World:    world,
+			}
+			new_stats = append(new_stats, player_stat)
 		}
 	}
+
+	db.UpdatePlayerStat(&db.Update_data{Statistics: new_stats})
 
 	return player_stat_data
 
@@ -82,7 +94,7 @@ func CollectAllStats(get_stats bool) {
 				log_error(err, "Error while checking file information.")
 				old_tracker.size[file_path] = file_info.Size()
 				old_tracker.date[file_path] = file_info.ModTime()
-				date := file_info.ModTime().Format(time.RFC3339)
+				date := file_info.ModTime().Unix()
 
 				if get_stats {
 					println("Collecting stats for " + file_name)
@@ -118,7 +130,7 @@ func pollDir(file_path string) {
 			if file_info.Size() != old_tracker.size[player_stat_file] || file_info.ModTime() != old_tracker.date[player_stat_file] {
 				old_tracker.size[player_stat_file] = file_info.Size()
 				old_tracker.date[player_stat_file] = file_info.ModTime()
-				date := file_info.ModTime().Format(time.RFC3339)
+				date := file_info.ModTime().Unix()
 				collectPlayerStat(player_stat_file, strings.Trim(v.Name(), ".json"), world_name, date)
 				return
 			}

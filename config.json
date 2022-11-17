@@ -7,7 +7,8 @@
     ],
     "api": {
         "default_response_limit": 5,
-        "max_response_limit": 100
+        "max_response_limit": 100,
+        "default_world": "world"
     },
     "polling": {
         "polling_speed": 5,

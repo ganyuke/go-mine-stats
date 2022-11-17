@@ -1,4 +1,4 @@
-# go-mine-stat
+# go-mine-stats
 A Go-based API backend to access player statistics, inspired by [MinecraftStats](https://github.com/pdinklag/MinecraftStats). In theory, compatible with any modded statistics (such as items) as well.
 
 **This project is in a barely usable state. Expect breaking changes often.**
@@ -16,7 +16,8 @@ All configuration is done through the `config.json` file found in the root of th
     ],
     "api": {
         "default_response_limit": 5,
-        "max_response_limit": 100
+        "max_response_limit": 100,
+        "default_world": "world",
     },
     "polling": {
         "polling_speed": 5,
@@ -30,6 +31,7 @@ All configuration is done through the `config.json` file found in the root of th
 * `api`:
   * `default_response_limit`: The default amount of statistics entries the API will return if `limit` is not specified in the query.
   * `max_response_limit`: The maximum amount of statistics entries the API will return.
+  * `default_world`: The default Minecraft world that the API should return if `world` is not specified in the query. You may leave this blank if you don't want this behavior.
 * `polling`:
   * `polling_speed`: How often (in minutes) the program should check player statistics files for changes. Recommend keeping this relatively high, as the database will store every change made to a statistic as a new row.
   * `blacklist`: A list of UUIDs whose statistics will not be scanned into the database. **Note:** This will NOT remove player data already scanned inside the database.

@@ -17,8 +17,9 @@ func log_error(err error, context string) {
 }
 
 type api_config_struct struct {
-	DefaultRespLimit int `json:"default_response_limit"`
-	MaxRespLimit     int `json:"max_response_limit"`
+	DefaultRespLimit int    `json:"default_response_limit"`
+	MaxRespLimit     int    `json:"max_response_limit"`
+	DefaultWorld     string `json:"default_world"`
 }
 
 type scan_config_struct struct {
