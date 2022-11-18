@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"log"
+	"strconv"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -19,6 +21,7 @@ type data struct {
 	queryTotalCategory *statement_order
 	queryTotalStat     *sql.Stmt
 	queryTotal         *sql.Stmt
+	queryDate          *sql.Stmt
 	queryUuid          *sql.Stmt
 	insertNew          *sql.Stmt
 	insertHistorical   *sql.Stmt
@@ -32,12 +35,12 @@ type statement_order struct {
 	desc *sql.Stmt
 }
 type Stat_item struct {
-	Uuid     string `json:"uuid"`
-	Category string `json:"category"`
-	Item     string `json:"stat"`
-	Value    int    `json:"value"`
-	Date     int64  `json:"date"`
-	World    string `json:"world"`
+	Uuid     string    `json:"uuid"`
+	Category string    `json:"category"`
+	Item     string    `json:"stat"`
+	Value    int       `json:"value"`
+	Date     time.Time `json:"date"`
+	World    string    `json:"world"`
 }
 
 type Stat_total struct {
@@ -197,6 +200,26 @@ func GetStatsForCategory(category, world, order, limit string) []Stat_item {
 	}
 }
 
+func GetStatDateRange(uuid, category, item, world, startDate, endDate string) []Stat_item {
+	log.Println("Retrieving stat " + item + " between " + startDate + " and " + endDate + " for category " + category)
+	startDateParsed, err := time.Parse(time.RFC3339, startDate)
+	if err != nil {
+		unixTime, err := strconv.ParseInt(startDate, 10, 64)
+		startDateParsed = time.Unix(unixTime, 0)
+		log_error(err, "E_TIMEPARSE_FAIL")
+	}
+	endDateParsed, err := time.Parse(time.RFC3339, endDate)
+	if err != nil {
+		unixTime, err := strconv.ParseInt(startDate, 10, 64)
+		endDateParsed = time.Unix(unixTime, 0)
+		log_error(err, "E_TIMEPARSE_FAIL")
+	}
+
+	rows, err := Monika.queryDate.Query(uuid, category, item, world, startDateParsed, startDateParsed, endDateParsed)
+	log_error(err, "E_QUERY_FAIL")
+	return makeList(rows)
+}
+
 func makeListTotal(rows *sql.Rows) []Stat_total {
 	var stat_obj Stat_total
 	var list []Stat_total
@@ -338,6 +361,13 @@ func prepareStatements(connection *sql.DB) *data {
 			ORDER BY date DESC 
 			LIMIT 1`,
 		),
+		queryDate: prepareFunc(
+			`SELECT uuid, stat_category, stat_name, value, date, world
+			FROM historical_stats WHERE uuid = ? AND stat_category = ? AND stat_name = ? AND world = ? 
+			AND date
+			BETWEEN COALESCE( (SELECT date FROM historical_stats WHERE date <= ? LIMIT 1),? )
+			  AND ?`,
+		),
 		insertNew: prepareFunc(
 			`INSERT INTO stats 
 			(uuid, date, stat_category, stat_name, value, world) 
@@ -397,11 +427,13 @@ func log_error(err error, context string) {
 		context = "Error while scanning SQL database: "
 	case context == "E_TRANSACTION_FAIL":
 		context = "Error while intiating SQL transaction: "
+	case context == "E_TIMEPARSE_FAIL":
+		context = "Error while converting string to date: "
 	default:
 		context = "An error has occured: "
 	}
 
 	if err != nil {
-		log.Fatal(context, err)
+		log.Println(context, err)
 	}
 }

@@ -43,12 +43,17 @@ func InitRoutes() {
 					return c.SendString("Error: invalid 'sort' parameter.")
 				}
 			} else if c.Query("uuid") != "" && c.Query("stat") != "" { // Return specific statistic data from player
-				statistic, err := db.RetrievePlayerStat(c.Query("uuid"), c.Params("category"), c.Query("stat"), c.Query("world", default_world))
-				if err != nil {
-					return c.SendString("Error: row not found.")
+				if c.Query("start_date") != "" && c.Query("end_date") != "" {
+					statistic := db.GetStatDateRange(c.Query("uuid"), c.Params("category"), c.Query("stat"), c.Query("world", default_world), c.Query("start_date"), c.Query("end_date"))
+					return c.JSON(statistic)
+				} else {
+					statistic, err := db.RetrievePlayerStat(c.Query("uuid"), c.Params("category"), c.Query("stat"), c.Query("world", default_world))
+					if err != nil {
+						return c.SendString("Error: row not found.")
+					}
+					return c.JSON(statistic)
 				}
-				return c.JSON(statistic)
-			} else if c.Query("sort") != "" && c.Query("stat") != "" { // Return all players' data in specific statistic
+			} else if c.Query("stat") != "" { // Return all players' data in specific statistic
 				switch {
 				default: // hopefully prevent SQL injection
 					statistic := db.GetExtrema(c.Params("category"), c.Query("stat"), c.Query("world", default_world), "DESC", limit)
@@ -64,7 +69,7 @@ func InitRoutes() {
 				}
 			}
 		}
-		return c.SendString("Bruh")
+		return c.SendString("Error: no valid query provided.")
 	})
 
 	v1.Get("/stats/:category/summary", func(c *fiber.Ctx) error { // TODO: Make not awful to look at
