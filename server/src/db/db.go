@@ -28,6 +28,7 @@ type data struct {
 	updateRow          *sql.Stmt
 	checkExist         *sql.Stmt
 	checkDifference    *sql.Stmt
+	checkWorld         *sql.Stmt
 }
 
 type statement_order struct {
@@ -58,11 +59,18 @@ type Checkers struct {
 	Chess int
 }
 
-func UpdatePlayerStat(data *Update_data) {
+func UpdatePlayerStat(data *Update_data) error {
 
-	context := context.Background()
-	transaction, err := Monika.db.BeginTx(context, nil)
+	ctx := context.Background()
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	transaction, err := Monika.db.BeginTx(ctx, nil)
 	log_error(err, "E_TRANSACTION_FAIL")
+	if err != nil {
+		return err
+	}
 
 	log.Println("COMMIT BEGIN")
 
@@ -74,52 +82,64 @@ func UpdatePlayerStat(data *Update_data) {
 		world := player_entries.World
 		value := player_entries.Value
 
-		log.Println("Inserting in " + category + " the item " + item + " for player " + uuid)
+		// log.Println("Inserting in " + category + " the item " + item + " for player " + uuid)
 
 		var check_obj Checkers
 
-		err := Monika.checkDifference.QueryRow(uuid, category, item, value, world).Scan(&check_obj.Chess)
+		err := Monika.checkDifference.QueryRowContext(ctx, uuid, category, item, value, world).Scan(&check_obj.Chess)
 		log_error(err, "E_SCAN_FAIL")
+		if err != nil {
+			return err
+		}
 
 		// Drop change if row is exactly the same.
 		if check_obj.Chess == 1 {
 			log.Println("No difference in statistic, dropping change...")
-			return
+			return nil
 		}
 
-		err = Monika.checkExist.QueryRow(uuid, category, item, world).Scan(&check_obj.Chess)
+		err = Monika.checkExist.QueryRowContext(ctx, uuid, category, item, world).Scan(&check_obj.Chess)
 		log_error(err, "E_SCAN_FAIL")
+		if err != nil {
+			return err
+		}
 
 		// Check if the statistic already exists in the current stat table
 		if check_obj.Chess == 1 {
-			log.Println("Row exists, updating current stats...")
-			_, err = Monika.updateRow.ExecContext(context, date, value, uuid, category, item, world)
+			// log.Println("Row exists, updating current stats...")
+			_, err = Monika.updateRow.ExecContext(ctx, date, value, uuid, category, item, world)
 			if err != nil {
 				transaction.Rollback()
-				return
+				return err
 			}
 		} else {
-			log.Println("Row not found, creating new stat...")
-			_, err = Monika.insertNew.ExecContext(context, uuid, date, category, item, value, world)
+			// log.Println("Row not found, creating new stat...")
+			_, err = Monika.insertNew.ExecContext(ctx, uuid, date, category, item, value, world)
 			if err != nil {
 				transaction.Rollback()
-				return
+				return err
 			}
 		}
 
 		// Add statistic to historical table for tracking over time
-		_, err = Monika.insertHistorical.ExecContext(context, uuid, date, category, item, value, world)
+		_, err = Monika.insertHistorical.ExecContext(ctx, uuid, date, category, item, value, world)
 		if err != nil {
 			transaction.Rollback()
-			return
+			return err
 		}
 
 	}
 
 	err = transaction.Commit()
 	log_error(err, "E_TRANSACTION_FAIL")
+	if err != nil {
+		transaction.Rollback()
+		return err
+	}
 
 	log.Println("COMMIT END")
+
+	return nil
 
 }
 
@@ -210,7 +230,7 @@ func GetStatDateRange(uuid, category, item, world, startDate, endDate string) []
 	}
 	endDateParsed, err := time.Parse(time.RFC3339, endDate)
 	if err != nil {
-		unixTime, err := strconv.ParseInt(startDate, 10, 64)
+		unixTime, err := strconv.ParseInt(endDate, 10, 64)
 		endDateParsed = time.Unix(unixTime, 0)
 		log_error(err, "E_TIMEPARSE_FAIL")
 	}
@@ -218,6 +238,17 @@ func GetStatDateRange(uuid, category, item, world, startDate, endDate string) []
 	rows, err := Monika.queryDate.Query(uuid, category, item, world, startDateParsed, startDateParsed, endDateParsed)
 	log_error(err, "E_QUERY_FAIL")
 	return makeList(rows)
+}
+
+func GetWorld(world string) bool {
+	log.Println("Checking if \"" + world + "\" in database...")
+	var exists int
+	row := Monika.checkWorld.QueryRow(world)
+	err := row.Scan(&exists)
+	if err != nil {
+		log.Print(err)
+	}
+	return exists != 0
 }
 
 func makeListTotal(rows *sql.Rows) []Stat_total {
@@ -398,6 +429,14 @@ func prepareStatements(connection *sql.DB) *data {
 				SELECT 1 
 				FROM stats 
 				WHERE uuid = ? AND stat_category = ? AND stat_name = ? AND value = ? AND world = ?
+				LIMIT 1);
+			`,
+		),
+		checkWorld: prepareFunc(
+			`SELECT EXISTS(
+				SELECT 1 
+				FROM stats 
+				WHERE world = ?
 				LIMIT 1);
 			`,
 		),

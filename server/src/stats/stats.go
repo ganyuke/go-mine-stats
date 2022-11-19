@@ -56,7 +56,8 @@ func collectPlayerStat(file_location, uuid, world string, date time.Time) player
 		}
 	}
 
-	db.UpdatePlayerStat(&db.Update_data{Statistics: new_stats})
+	err = db.UpdatePlayerStat(&db.Update_data{Statistics: new_stats})
+	log_error(err, "An error has occured while updating stats: ")
 
 	return player_stat_data
 
@@ -67,8 +68,14 @@ func CollectAllStats(get_stats bool) {
 	log.Println("Collecting all stats...")
 
 	for _, v := range config.Config_file.ServerList {
+		var get_stats_for_world bool
+		get_stats_for_world = get_stats
 
 		println("Collecting stats for " + v.WorldName)
+
+		if !get_stats && !db.GetWorld(v.WorldName) {
+			get_stats_for_world = true
+		}
 
 		server_location, world_name := v.ServerPath, v.WorldName
 		stats_directory := server_location + "/" + world_name + "/stats"
@@ -96,7 +103,7 @@ func CollectAllStats(get_stats bool) {
 				old_tracker.date[file_path] = file_info.ModTime()
 				date := file_info.ModTime().UTC().Round(time.Second)
 
-				if get_stats {
+				if get_stats_for_world {
 					println("Collecting stats for " + file_name)
 					collectPlayerStat(file_path, strings.Trim(file_name, extension), world_name, date)
 				}
