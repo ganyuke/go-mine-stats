@@ -296,14 +296,19 @@ func initDb(db *sql.DB) {
 		world TEXT NOT NULL
 	);	
 	CREATE TABLE historical_stats (
-			num INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-			uuid TEXT NOT NULL,
-			date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			stat_category TEXT NOT NULL,
-			stat_name TEXT NOT NULL,
-			value INTEGER NOT NULL,
-			world TEXT NOT NULL
-		);
+		num INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+		uuid TEXT NOT NULL,
+		date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		stat_category TEXT NOT NULL,
+		stat_name TEXT NOT NULL,
+		value INTEGER NOT NULL,
+		world TEXT NOT NULL
+	);
+	CREATE TABLE usernames (
+		num INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+		uuid TEXT UNIQUE NOT NULL,
+		name TEXT NOT NULL
+	);
 	`
 	_, err := db.Exec(tables)
 	log_error(err, "E_TABLE_FAIL")
