@@ -29,5 +29,11 @@ func main() {
 		stats.CollectAllStats(false)
 	}
 
+	err, names := stats.CollectUsernames()
+	if err != nil {
+		log.Println(err)
+	}
+	db.InsertUsernames(names)
+
 	routes.InitRoutes()
 }

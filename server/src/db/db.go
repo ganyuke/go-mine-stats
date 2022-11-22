@@ -29,6 +29,7 @@ type data struct {
 	checkExist         *sql.Stmt
 	checkDifference    *sql.Stmt
 	checkWorld         *sql.Stmt
+	insertUsername     *sql.Stmt
 }
 
 type statement_order struct {
@@ -55,8 +56,13 @@ type Update_data struct {
 	Statistics []*Stat_item
 }
 
-type Checkers struct {
-	Chess int
+type checkers struct {
+	chess int
+}
+
+type Username struct {
+	Name string `json:"name"`
+	Uuid string `json:"uuid"`
 }
 
 func UpdatePlayerStat(data *Update_data) error {
@@ -84,28 +90,28 @@ func UpdatePlayerStat(data *Update_data) error {
 
 		// log.Println("Inserting in " + category + " the item " + item + " for player " + uuid)
 
-		var check_obj Checkers
+		var check_obj checkers
 
-		err := Monika.checkDifference.QueryRowContext(ctx, uuid, category, item, value, world).Scan(&check_obj.Chess)
+		err := Monika.checkDifference.QueryRowContext(ctx, uuid, category, item, value, world).Scan(&check_obj.chess)
 		log_error(err, "E_SCAN_FAIL")
 		if err != nil {
 			return err
 		}
 
 		// Drop change if row is exactly the same.
-		if check_obj.Chess == 1 {
+		if check_obj.chess == 1 {
 			log.Println("No difference in statistic, dropping change...")
 			return nil
 		}
 
-		err = Monika.checkExist.QueryRowContext(ctx, uuid, category, item, world).Scan(&check_obj.Chess)
+		err = Monika.checkExist.QueryRowContext(ctx, uuid, category, item, world).Scan(&check_obj.chess)
 		log_error(err, "E_SCAN_FAIL")
 		if err != nil {
 			return err
 		}
 
 		// Check if the statistic already exists in the current stat table
-		if check_obj.Chess == 1 {
+		if check_obj.chess == 1 {
 			// log.Println("Row exists, updating current stats...")
 			_, err = Monika.updateRow.ExecContext(ctx, date, value, uuid, category, item, world)
 			if err != nil {
@@ -249,6 +255,16 @@ func GetWorld(world string) bool {
 		log.Print(err)
 	}
 	return exists != 0
+}
+
+func InsertUsernames(list []Username) bool {
+	for _, obj := range list {
+		_, err := Monika.insertUsername.Exec(obj.Uuid, obj.Name)
+		if err != nil {
+			log.Print(err)
+		}
+	}
+	return true
 }
 
 func makeListTotal(rows *sql.Rows) []Stat_total {
@@ -444,6 +460,13 @@ func prepareStatements(connection *sql.DB) *data {
 				WHERE world = ?
 				LIMIT 1);
 			`,
+		),
+		insertUsername: prepareFunc(
+			`INSERT INTO usernames 
+			(uuid, name) 
+			VALUES (?, ?)
+			ON CONFLICT(uuid) DO
+			UPDATE SET name=excluded.name`,
 		),
 	}
 	return init_data

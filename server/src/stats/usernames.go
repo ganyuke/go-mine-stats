@@ -3,15 +3,11 @@ package stats
 import (
 	"encoding/json"
 	"go-mine-stats/src/config"
+	"go-mine-stats/src/db"
 	"os"
 )
 
-type username struct {
-	Name string `json:"name"`
-	Uuid string `json:"uuid"`
-}
-
-func uniqueList(target, source []username) []username {
+func uniqueList(target, source []db.Username) []db.Username {
 	for _, orig_obj := range target {
 		for _, obj := range source {
 			if obj == orig_obj {
@@ -23,8 +19,8 @@ func uniqueList(target, source []username) []username {
 	return target
 }
 
-func CollectUsernames() (error, []username) {
-	var names []username
+func CollectUsernames() (error, []db.Username) {
+	var names []db.Username
 
 	for _, serverDir := range config.Config_file.ServerList {
 		userCache, err := os.ReadFile(serverDir.ServerPath + "/usercache.json")
@@ -40,17 +36,17 @@ func CollectUsernames() (error, []username) {
 			return err, nil
 		}
 
-		var user_cache_data []username
+		var user_cache_data []db.Username
 		err = json.Unmarshal(userCache, &user_cache_data)
 		if err != nil {
 			return err, nil
 		}
-		var whitelist_data []username
+		var whitelist_data []db.Username
 		err = json.Unmarshal(whitelist, &whitelist_data)
 		if err != nil {
 			return err, nil
 		}
-		var ops_data []username
+		var ops_data []db.Username
 		err = json.Unmarshal(ops, &ops_data)
 		if err != nil {
 			return err, nil
