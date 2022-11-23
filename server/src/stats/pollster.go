@@ -17,7 +17,7 @@ type pollster struct {
 	watching []string
 }
 
-func Init_poll_official() *pollster {
+func InitPollOfficial() *pollster {
 	polling_center := &pollster{ticker: time.NewTicker(time.Minute * time.Duration(config.Config_file.Scan.PollSpeed)), new: make(chan string)}
 	go polling_center.Vote()
 	return polling_center

@@ -22,9 +22,16 @@ type api_config_struct struct {
 	DefaultWorld     string `json:"default_world"`
 }
 
+type blacklist_struct struct {
+	ExOps bool     `json:"operators"`
+	ExBan bool     `json:"banned"`
+	List  []string `json:"list"`
+}
+
 type scan_config_struct struct {
-	PollSpeed int      `json:"polling_speed"`
-	Blacklist []string `json:"blacklist"`
+	PollSpeed int              `json:"polling_speed"`
+	Whitelist bool             `json:"invert_blacklist"`
+	Blacklist blacklist_struct `json:"blacklist"`
 }
 
 type server_config_struct struct {

@@ -30,6 +30,7 @@ type data struct {
 	checkDifference    *sql.Stmt
 	checkWorld         *sql.Stmt
 	insertUsername     *sql.Stmt
+	getUsername        *sql.Stmt
 }
 
 type statement_order struct {
@@ -257,14 +258,26 @@ func GetWorld(world string) bool {
 	return exists != 0
 }
 
-func InsertUsernames(list []Username) bool {
+func InsertUsernames(list []Username) error {
 	for _, obj := range list {
 		_, err := Monika.insertUsername.Exec(obj.Uuid, obj.Name)
 		if err != nil {
-			log.Print(err)
+			log_error(err, "E_INSERT_FAIL")
+			return err
 		}
 	}
-	return true
+	return nil
+}
+
+func GetUsernameFromUuid(uuid string) (Username, error) {
+	var player Username
+	log.Println("Retriving display name for player " + uuid + "...")
+	row := Monika.getUsername.QueryRow(uuid)
+	err := row.Scan(&player.Uuid, &player.Name)
+	if err != nil {
+		return player, err
+	}
+	return player, nil
 }
 
 func makeListTotal(rows *sql.Rows) []Stat_total {
@@ -467,6 +480,13 @@ func prepareStatements(connection *sql.DB) *data {
 			VALUES (?, ?)
 			ON CONFLICT(uuid) DO
 			UPDATE SET name=excluded.name`,
+		),
+		getUsername: prepareFunc(
+			`SELECT uuid, name
+			FROM usernames
+			WHERE uuid = ?
+			LIMIT 1;
+			`,
 		),
 	}
 	return init_data

@@ -17,11 +17,16 @@ All configuration is done through the `config.json` file found in the root of th
     "api": {
         "default_response_limit": 5,
         "max_response_limit": 100,
-        "default_world": "world",
+        "default_world": "world"
     },
     "polling": {
         "polling_speed": 5,
-        "blacklist": []
+        "invertBlacklist": false,
+        "blacklist": {
+            "operators": false,
+            "banned": false,
+            "list": []
+        }
     }
 }
 ```
@@ -34,7 +39,11 @@ All configuration is done through the `config.json` file found in the root of th
   * `default_world`: The default Minecraft world that the API should return if `world` is not specified in the query. You may leave this blank if you don't want this behavior.
 * `polling`:
   * `polling_speed`: How often (in minutes) the program should check player statistics files for changes. Recommend keeping this relatively high, as the database will store every change made to a statistic as a new row.
-  * `blacklist`: A list of UUIDs whose statistics will not be scanned into the database. **Note:** This will NOT remove player data already scanned inside the database.
+  * `invert_blacklist`: Turn the blacklist into a whitelist.
+  * `blacklist`: UUIDs whose statistics stop being scanned into the database. **Note:** This will NOT remove player data already scanned inside the database.
+    * `operators`: Stop logging stats from operators.
+    * `banned`: Stop logging stats from banned players.
+    * `list`: Arbitrary list of  blacklisted UUIDs
 
 ## Polling statistics from multiple servers
 Under `server_list`, you can add as many servers or worlds as you want by adding more JSON objects.

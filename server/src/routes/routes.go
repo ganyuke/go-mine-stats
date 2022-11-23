@@ -108,5 +108,16 @@ func InitRoutes() {
 		}
 	})
 
+	v1.Get("/users", func(c *fiber.Ctx) error { // TODO: Make not awful to look at
+		if c.Query("uuid") != "" {
+			data, err := db.GetUsernameFromUuid(c.Query("uuid"))
+			if err != nil {
+				return c.SendString("Error: UUID not in database.")
+			}
+			return c.JSON(data)
+		}
+		return c.SendString("Error: No UUID provided.")
+	})
+
 	app.Listen(":3000")
 }

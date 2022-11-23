@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"go-mine-stats/src/config"
 	"go-mine-stats/src/db"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -13,12 +14,18 @@ import (
 
 func log_error(err error, context string) {
 	if err != nil {
-		log.Fatal(context, err)
+		log.Println(context, err)
 	}
 }
 
 var (
 	old_tracker *old_file_info
+)
+
+const (
+	logFileDates = iota
+	importStatistics
+	checkImportStatistics
 )
 
 type player_statistics struct {
@@ -32,6 +39,8 @@ type old_file_info struct {
 }
 
 func collectPlayerStat(file_location, uuid, world string, date time.Time) player_statistics {
+
+	println("Collecting stats for player " + uuid)
 
 	file, err := os.ReadFile(file_location)
 	log_error(err, "Error while reading player statistic file:")
@@ -63,61 +72,77 @@ func collectPlayerStat(file_location, uuid, world string, date time.Time) player
 
 }
 
+func loopStats(stats_directory, world_name string, directory_members []fs.DirEntry, operation int) {
+player:
+	for _, player_json := range directory_members {
+		file_name := player_json.Name()
+		extension := filepath.Ext(file_name)
+		file_path := stats_directory + "/" + file_name
+
+		if extension == ".json" {
+
+			player_uuid := strings.Trim(file_name, extension)
+
+			for _, uuid := range config.Config_file.Scan.Blacklist.List {
+				if uuid == player_uuid && !config.Config_file.Scan.Whitelist {
+					continue player
+				} else if uuid != player_uuid && config.Config_file.Scan.Whitelist {
+					continue player
+				}
+			}
+
+			file_info, err := os.Stat(file_path)
+			log_error(err, "Error while checking file information.")
+
+			switch operation {
+			case logFileDates:
+				old_tracker.size[file_path] = file_info.Size()
+				old_tracker.date[file_path] = file_info.ModTime()
+			case importStatistics:
+				old_tracker.size[file_path] = file_info.Size()
+				old_tracker.date[file_path] = file_info.ModTime()
+				date := file_info.ModTime().UTC().Round(time.Second)
+				collectPlayerStat(file_path, player_uuid, world_name, date)
+			case checkImportStatistics:
+				if file_info.Size() != old_tracker.size[file_path] || file_info.ModTime() != old_tracker.date[file_path] {
+					old_tracker.size[file_path] = file_info.Size()
+					old_tracker.date[file_path] = file_info.ModTime()
+					date := file_info.ModTime().UTC().Round(time.Second)
+					collectPlayerStat(file_path, player_uuid, world_name, date)
+				}
+			}
+		}
+	}
+}
+
 func CollectAllStats(get_stats bool) {
-
-	log.Println("Collecting all stats...")
-
+	old_tracker = &old_file_info{size: map[string]int64{}, date: map[string]time.Time{}}
 	for _, v := range config.Config_file.ServerList {
-		var get_stats_for_world bool
-		get_stats_for_world = get_stats
+		var get_stats_for_world int
+		if get_stats {
+			get_stats_for_world = importStatistics
+		} else {
+			get_stats_for_world = logFileDates
+		}
 
 		println("Collecting stats for " + v.WorldName)
 
 		if !get_stats && !db.GetWorld(v.WorldName) {
-			get_stats_for_world = true
+			get_stats_for_world = importStatistics
 		}
 
 		server_location, world_name := v.ServerPath, v.WorldName
 		stats_directory := server_location + "/" + world_name + "/stats"
-		Poll_official.Monitor(stats_directory)
 		player_stats, err := os.ReadDir(stats_directory)
 		log_error(err, "Error while reading statistics directory:")
-		old_tracker = &old_file_info{size: map[string]int64{}, date: map[string]time.Time{}}
 
-		for _, player_json := range player_stats {
-			file_name := player_json.Name()
-			extension := filepath.Ext(file_name)
-			file_path := stats_directory + "/" + file_name
+		loopStats(stats_directory, world_name, player_stats, get_stats_for_world)
 
-			if extension == ".json" {
-
-				for _, v := range config.Config_file.Scan.Blacklist {
-					if v == file_path {
-						return
-					}
-				}
-
-				file_info, err := os.Stat(file_path)
-				log_error(err, "Error while checking file information.")
-				old_tracker.size[file_path] = file_info.Size()
-				old_tracker.date[file_path] = file_info.ModTime()
-				date := file_info.ModTime().UTC().Round(time.Second)
-
-				if get_stats_for_world {
-					println("Collecting stats for " + file_name)
-					collectPlayerStat(file_path, strings.Trim(file_name, extension), world_name, date)
-				}
-
-			}
-
-		}
-
+		Poll_official.Monitor(stats_directory)
 	}
-
 }
 
 func pollDir(file_path string) {
-
 	directory_members, err := os.ReadDir(file_path)
 	concat := strings.Split(file_path, "/")
 	world_name := concat[len(concat)-2]
@@ -128,20 +153,5 @@ func pollDir(file_path string) {
 		return
 	}
 
-	for _, v := range directory_members {
-		player_stat_file := file_path + "/" + v.Name()
-		extension := filepath.Ext(v.Name())
-		if extension == ".json" {
-			file_info, err := os.Stat(player_stat_file)
-			log_error(err, "Error occured while comparing player stats JSON:")
-			if file_info.Size() != old_tracker.size[player_stat_file] || file_info.ModTime() != old_tracker.date[player_stat_file] {
-				old_tracker.size[player_stat_file] = file_info.Size()
-				old_tracker.date[player_stat_file] = file_info.ModTime()
-				date := file_info.ModTime().UTC().Round(time.Second)
-				collectPlayerStat(player_stat_file, strings.Trim(v.Name(), ".json"), world_name, date)
-				return
-			}
-		}
-	}
-
+	loopStats(file_path, world_name, directory_members, checkImportStatistics)
 }
