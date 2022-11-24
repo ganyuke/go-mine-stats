@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -31,6 +32,7 @@ type data struct {
 	checkWorld         *sql.Stmt
 	insertUsername     *sql.Stmt
 	getUsername        *sql.Stmt
+	insertCumulative   *sql.Stmt
 }
 
 type statement_order struct {
@@ -130,6 +132,14 @@ func UpdatePlayerStat(data *Update_data) error {
 
 		// Add statistic to historical table for tracking over time
 		_, err = Monika.insertHistorical.ExecContext(ctx, uuid, date, category, item, value, world)
+		if err != nil {
+			transaction.Rollback()
+			return err
+		}
+
+		// Add statistic to cumulative table for aggregate data
+		// TODO: Just search through the historical stats table instead,
+		_, err = Monika.insertCumulative.ExecContext(ctx, date, category, item, date, category, item, world, world)
 		if err != nil {
 			transaction.Rollback()
 			return err
@@ -269,15 +279,19 @@ func InsertUsernames(list []Username) error {
 	return nil
 }
 
-func GetUsernameFromUuid(uuid string) (Username, error) {
-	var player Username
-	log.Println("Retriving display name for player " + uuid + "...")
-	row := Monika.getUsername.QueryRow(uuid)
-	err := row.Scan(&player.Uuid, &player.Name)
-	if err != nil {
-		return player, err
+func GetUsernameFromUuid(uuids string) ([]Username, error) {
+	var player_list []Username
+	for _, uuid := range strings.Split(uuids, ",") {
+		log.Println("Retriving display name for player " + uuid + "...")
+		var player Username
+		row := Monika.getUsername.QueryRow(uuid)
+		err := row.Scan(&player.Uuid, &player.Name)
+		if err != nil {
+			return player_list, err
+		}
+		player_list = append(player_list, player)
 	}
-	return player, nil
+	return player_list, nil
 }
 
 func makeListTotal(rows *sql.Rows) []Stat_total {
@@ -298,7 +312,7 @@ func makeList(rows *sql.Rows) []Stat_item {
 	for rows.Next() {
 		rows.Scan(&stat_obj.Uuid, &stat_obj.Category, &stat_obj.Item, &stat_obj.Value, &stat_obj.Date, &stat_obj.World)
 		log.Printf("UUID: %s, Category: %s, Item: %s, Value: %d, Mod. Date: %d\n", stat_obj.Uuid,
-			stat_obj.Category, stat_obj.Item, stat_obj.Value, stat_obj.Date)
+			stat_obj.Category, stat_obj.Item, stat_obj.Value, stat_obj.Date.UTC())
 		list = append(list, stat_obj)
 	}
 	return list
@@ -327,6 +341,14 @@ func initDb(db *sql.DB) {
 	CREATE TABLE historical_stats (
 		num INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
 		uuid TEXT NOT NULL,
+		date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		stat_category TEXT NOT NULL,
+		stat_name TEXT NOT NULL,
+		value INTEGER NOT NULL,
+		world TEXT NOT NULL
+	);
+	CREATE TABLE cumulative_stats (
+		num INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
 		date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		stat_category TEXT NOT NULL,
 		stat_name TEXT NOT NULL,
@@ -486,6 +508,18 @@ func prepareStatements(connection *sql.DB) *data {
 			FROM usernames
 			WHERE uuid = ?
 			LIMIT 1;
+			`,
+		),
+		insertCumulative: prepareFunc(
+			// TODO: Find a way to do this without making a new table.
+			// TODO: Or make it not break when inserting dates out of order.
+			`INSERT INTO cumulative_stats 
+			(date, stat_category, stat_name, value, world) 
+			VALUES (?, ?, ?, 
+				(SELECT SUM(value) 
+				FROM stats 
+				WHERE date <= ? AND stat_category = ? AND stat_name = ? AND world = ?), ?
+			)
 			`,
 		),
 	}
