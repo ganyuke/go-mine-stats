@@ -3,6 +3,7 @@ package routes
 import (
 	"go-mine-stats/src/config"
 	"go-mine-stats/src/db"
+	"log"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
@@ -79,7 +80,7 @@ func InitRoutes() {
 		if limitNum > maxRespLimit {
 			limit = maxRespString
 		}
-		if c.Query("stat") == "all" { // Return sum of
+		if c.Query("stat") == "all" { // Return sum of all stats in a given category
 			switch {
 			default: // hopefully prevent SQL injection
 				statistic := db.GetTotalStatsForCategory(c.Params("category"), c.Query("world", default_world), "DESC", limit)
@@ -94,11 +95,27 @@ func InitRoutes() {
 				return c.SendString("Error: invalid 'sort' parameter.")
 			}
 		} else if c.Query("stat") != "" { // Return sum of specific statistic
-			statistic, err := db.RetrieveTotalStat(c.Params("category"), c.Query("stat"), c.Query("world", default_world))
-			if err != nil {
-				return c.SendString("Error: row not found.")
+			if c.Query("start_date") != "" && c.Query("end_date") != "" {
+				switch {
+				default: // hopefully prevent SQL injection
+					statistic := db.GetCumulativeStat(c.Params("category"), c.Query("stat"), c.Query("world", default_world), "DESC")
+					return c.JSON(statistic)
+				case sort == "max":
+					statistic := db.GetCumulativeStat(c.Params("category"), c.Query("stat"), c.Query("world", default_world), "DESC")
+					return c.JSON(statistic)
+				case sort == "min":
+					statistic := db.GetCumulativeStat(c.Params("category"), c.Query("stat"), c.Query("world", default_world), "ASC")
+					return c.JSON(statistic)
+				case sort != "":
+					return c.SendString("Error: invalid 'sort' parameter.")
+				}
+			} else {
+				statistic, err := db.RetrieveTotalStat(c.Params("category"), c.Query("stat"), c.Query("world", default_world))
+				if err != nil {
+					return c.SendString("Error: row not found.")
+				}
+				return c.JSON(statistic)
 			}
-			return c.JSON(statistic)
 		} else {
 			statistic, err := db.RetrieveTotalCategory(c.Params("category"), c.Query("world", default_world))
 			if err != nil {
@@ -119,5 +136,5 @@ func InitRoutes() {
 		return c.SendString("Error: No UUID provided.")
 	})
 
-	app.Listen(":3000")
+	log.Fatal(app.Listen(":3000"))
 }

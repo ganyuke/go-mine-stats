@@ -20,6 +20,7 @@ type data struct {
 	queryCategory      *statement_order
 	queryTop           *statement_order
 	queryTotalCategory *statement_order
+	queryCumulative    *statement_order
 	queryTotalStat     *sql.Stmt
 	queryTotal         *sql.Stmt
 	queryDate          *sql.Stmt
@@ -32,7 +33,6 @@ type data struct {
 	checkWorld         *sql.Stmt
 	insertUsername     *sql.Stmt
 	getUsername        *sql.Stmt
-	insertCumulative   *sql.Stmt
 }
 
 type statement_order struct {
@@ -53,6 +53,14 @@ type Stat_total struct {
 	Item     string `json:"stat"`
 	Value    int    `json:"value"`
 	World    string `json:"world"`
+}
+
+type Stat_cumulative struct {
+	Category string    `json:"category"`
+	Item     string    `json:"stat"`
+	Value    int       `json:"value"`
+	Date     time.Time `json:"date"`
+	World    string    `json:"world"`
 }
 
 type Update_data struct {
@@ -132,14 +140,6 @@ func UpdatePlayerStat(data *Update_data) error {
 
 		// Add statistic to historical table for tracking over time
 		_, err = Monika.insertHistorical.ExecContext(ctx, uuid, date, category, item, value, world)
-		if err != nil {
-			transaction.Rollback()
-			return err
-		}
-
-		// Add statistic to cumulative table for aggregate data
-		// TODO: Just search through the historical stats table instead,
-		_, err = Monika.insertCumulative.ExecContext(ctx, date, category, item, date, category, item, world, world)
 		if err != nil {
 			transaction.Rollback()
 			return err
@@ -257,6 +257,19 @@ func GetStatDateRange(uuid, category, item, world, startDate, endDate string) []
 	return makeList(rows)
 }
 
+func GetCumulativeStat(category, item, world, order string) []Stat_cumulative {
+	log.Println("Retrieving cumulative stats for category " + category)
+	if order == "ASC" {
+		rows, err := Monika.queryCumulative.asc.Query(category, item, world)
+		log_error(err, "E_QUERY_FAIL")
+		return makeListCumulative(rows)
+	} else {
+		rows, err := Monika.queryCumulative.desc.Query(category, item, world)
+		log_error(err, "E_QUERY_FAIL")
+		return makeListCumulative(rows)
+	}
+}
+
 func GetWorld(world string) bool {
 	log.Println("Checking if \"" + world + "\" in database...")
 	var exists int
@@ -292,6 +305,18 @@ func GetUsernameFromUuid(uuids string) ([]Username, error) {
 		player_list = append(player_list, player)
 	}
 	return player_list, nil
+}
+
+func makeListCumulative(rows *sql.Rows) []Stat_cumulative {
+	var stat_obj Stat_cumulative
+	var list []Stat_cumulative
+	for rows.Next() {
+		rows.Scan(&stat_obj.Category, &stat_obj.Item, &stat_obj.Date, &stat_obj.World, &stat_obj.Value)
+		log.Printf("Category: %s, Item: %s, Value: %d\n",
+			stat_obj.Category, stat_obj.Item, stat_obj.Value)
+		list = append(list, stat_obj)
+	}
+	return list
 }
 
 func makeListTotal(rows *sql.Rows) []Stat_total {
@@ -341,14 +366,6 @@ func initDb(db *sql.DB) {
 	CREATE TABLE historical_stats (
 		num INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
 		uuid TEXT NOT NULL,
-		date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		stat_category TEXT NOT NULL,
-		stat_name TEXT NOT NULL,
-		value INTEGER NOT NULL,
-		world TEXT NOT NULL
-	);
-	CREATE TABLE cumulative_stats (
-		num INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
 		date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		stat_category TEXT NOT NULL,
 		stat_name TEXT NOT NULL,
@@ -427,6 +444,64 @@ func prepareStatements(connection *sql.DB) *data {
 				GROUP BY stat_name
 				ORDER BY sumVal DESC 
 				LIMIT ?`,
+			),
+		},
+		queryCumulative: &statement_order{
+			asc: prepareFunc(
+				`with subtracting as (SELECT
+							date,
+							value,
+							LAG ( value, 1, 0 ) OVER (partition BY uuid ORDER BY date ) prev_val,
+							world,
+							stat_category,
+							stat_name
+						FROM
+							historical_stats 
+						WHERE
+							stat_category = ? AND
+							stat_name = ? AND 
+							world = ?),
+				difference as (select
+					world,
+					stat_category,
+					stat_name, 
+					date, 
+					(value-prev_val) as diff_val from subtracting)
+				SELECT
+					stat_category,
+					stat_name,
+					date,
+					world,  
+					sum(diff_val) over (order by date) AS value from difference 
+					ORDER BY date ASC`,
+			),
+			desc: prepareFunc(
+				`with subtracting as (SELECT
+					date,
+					value,
+					LAG ( value, 1, 0 ) OVER (partition BY uuid ORDER BY date ) prev_val,
+					world,
+					stat_category,
+					stat_name
+				FROM
+					historical_stats 
+				WHERE
+					stat_category = ? AND
+					stat_name = ? AND 
+					world = ?),
+				difference as (select
+					world,
+					stat_category,
+					stat_name, 
+					date, 
+					(value-prev_val) as diff_val from subtracting)
+				SELECT
+					stat_category,
+					stat_name,
+					date,
+					world,  
+					sum(diff_val) over (order by date) AS value from difference 
+					ORDER BY date DESC`,
 			),
 		},
 		queryTotalStat: prepareFunc(
@@ -508,18 +583,6 @@ func prepareStatements(connection *sql.DB) *data {
 			FROM usernames
 			WHERE uuid = ?
 			LIMIT 1;
-			`,
-		),
-		insertCumulative: prepareFunc(
-			// TODO: Find a way to do this without making a new table.
-			// TODO: Or make it not break when inserting dates out of order.
-			`INSERT INTO cumulative_stats 
-			(date, stat_category, stat_name, value, world) 
-			VALUES (?, ?, ?, 
-				(SELECT SUM(value) 
-				FROM stats 
-				WHERE date <= ? AND stat_category = ? AND stat_name = ? AND world = ?), ?
-			)
 			`,
 		),
 	}
