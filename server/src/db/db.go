@@ -3,8 +3,8 @@ package db
 import (
 	"context"
 	"database/sql"
+	"go-mine-stats/src/config"
 	"log"
-	"strconv"
 	"strings"
 	"time"
 
@@ -24,7 +24,7 @@ type data struct {
 	queryTotalStat     *sql.Stmt
 	queryTotal         *sql.Stmt
 	queryDate          *sql.Stmt
-	queryUuid          *sql.Stmt
+	queryIndividual    *sql.Stmt
 	insertNew          *sql.Stmt
 	insertHistorical   *sql.Stmt
 	updateRow          *sql.Stmt
@@ -33,6 +33,8 @@ type data struct {
 	checkWorld         *sql.Stmt
 	insertUsername     *sql.Stmt
 	getUsername        *sql.Stmt
+	queryUuids         *sql.Stmt
+	queryUsernameUuids *sql.Stmt
 }
 
 type statement_order struct {
@@ -69,11 +71,6 @@ type Update_data struct {
 
 type checkers struct {
 	chess int
-}
-
-type Username struct {
-	Name string `json:"name"`
-	Uuid string `json:"uuid"`
 }
 
 func UpdatePlayerStat(data *Update_data) error {
@@ -163,7 +160,7 @@ func UpdatePlayerStat(data *Update_data) error {
 func RetrievePlayerStat(uuid, category, item, world string) (Stat_item, error) {
 	log.Println("Retrieving player " + uuid + " stat for " + item + " in category " + category)
 	var stat_obj Stat_item
-	row := Monika.queryUuid.QueryRow(uuid, category, item, world)
+	row := Monika.queryIndividual.QueryRow(uuid, category, item, world)
 	err := row.Scan(&stat_obj.Uuid, &stat_obj.Category, &stat_obj.Item, &stat_obj.Value, &stat_obj.Date, &stat_obj.World)
 	if err != nil {
 		log.Print(err)
@@ -237,34 +234,21 @@ func GetStatsForCategory(category, world, order, limit string) []Stat_item {
 	}
 }
 
-func GetStatDateRange(uuid, category, item, world, startDate, endDate string) []Stat_item {
-	log.Println("Retrieving stat " + item + " between " + startDate + " and " + endDate + " for category " + category)
-	startDateParsed, err := time.Parse(time.RFC3339, startDate)
-	if err != nil {
-		unixTime, err := strconv.ParseInt(startDate, 10, 64)
-		startDateParsed = time.Unix(unixTime, 0)
-		log_error(err, "E_TIMEPARSE_FAIL")
-	}
-	endDateParsed, err := time.Parse(time.RFC3339, endDate)
-	if err != nil {
-		unixTime, err := strconv.ParseInt(endDate, 10, 64)
-		endDateParsed = time.Unix(unixTime, 0)
-		log_error(err, "E_TIMEPARSE_FAIL")
-	}
-
-	rows, err := Monika.queryDate.Query(uuid, category, item, world, startDateParsed, startDateParsed, endDateParsed)
+func GetStatDateRange(uuid, category, item, world string, startDate, endDate time.Time) []Stat_item {
+	log.Println("Retrieving stat " + item + " between " + startDate.UTC().String() + " and " + endDate.UTC().String() + " for category " + category)
+	rows, err := Monika.queryDate.Query(uuid, category, item, world, startDate, startDate, endDate)
 	log_error(err, "E_QUERY_FAIL")
 	return makeList(rows)
 }
 
-func GetCumulativeStat(category, item, world, order string) []Stat_cumulative {
+func GetCumulativeStat(category, item, world, order string, startDate, endDate time.Time) []Stat_cumulative {
 	log.Println("Retrieving cumulative stats for category " + category)
 	if order == "ASC" {
-		rows, err := Monika.queryCumulative.asc.Query(category, item, world)
+		rows, err := Monika.queryCumulative.asc.Query(category, item, world, startDate, endDate)
 		log_error(err, "E_QUERY_FAIL")
 		return makeListCumulative(rows)
 	} else {
-		rows, err := Monika.queryCumulative.desc.Query(category, item, world)
+		rows, err := Monika.queryCumulative.desc.Query(category, item, world, startDate, endDate)
 		log_error(err, "E_QUERY_FAIL")
 		return makeListCumulative(rows)
 	}
@@ -281,7 +265,7 @@ func GetWorld(world string) bool {
 	return exists != 0
 }
 
-func InsertUsernames(list []Username) error {
+func InsertUsernames(list []config.Username) error {
 	for _, obj := range list {
 		_, err := Monika.insertUsername.Exec(obj.Uuid, obj.Name)
 		if err != nil {
@@ -292,11 +276,26 @@ func InsertUsernames(list []Username) error {
 	return nil
 }
 
-func GetUsernameFromUuid(uuids string) ([]Username, error) {
-	var player_list []Username
+func GetUuidsFromStats() []config.Username {
+	rows, err := Monika.queryUuids.Query()
+	log_error(err, "E_QUERY_FAIL")
+	return makeListUsernames(rows)
+}
+
+func GetUuidsFromUsernames() []config.Username {
+	rows, err := Monika.queryUsernameUuids.Query()
+	log_error(err, "E_QUERY_FAIL")
+	return makeListUsernames(rows)
+}
+
+func GetUsernameFromUuid(uuids string) ([]config.Username, error) {
+	var player_list []config.Username
 	for _, uuid := range strings.Split(uuids, ",") {
+		if config.CheckBlacklist(uuid) {
+			continue
+		}
 		log.Println("Retriving display name for player " + uuid + "...")
-		var player Username
+		var player config.Username
 		row := Monika.getUsername.QueryRow(uuid)
 		err := row.Scan(&player.Uuid, &player.Name)
 		if err != nil {
@@ -305,6 +304,16 @@ func GetUsernameFromUuid(uuids string) ([]Username, error) {
 		player_list = append(player_list, player)
 	}
 	return player_list, nil
+}
+
+func makeListUsernames(rows *sql.Rows) []config.Username {
+	var player_list config.Username
+	var list []config.Username
+	for rows.Next() {
+		rows.Scan(&player_list.Uuid)
+		list = append(list, player_list)
+	}
+	return list
 }
 
 func makeListCumulative(rows *sql.Rows) []Stat_cumulative {
@@ -449,31 +458,40 @@ func prepareStatements(connection *sql.DB) *data {
 		queryCumulative: &statement_order{
 			asc: prepareFunc(
 				`with subtracting as (SELECT
-							date,
-							value,
-							LAG ( value, 1, 0 ) OVER (partition BY uuid ORDER BY date ) prev_val,
-							world,
-							stat_category,
-							stat_name
-						FROM
-							historical_stats 
-						WHERE
-							stat_category = ? AND
-							stat_name = ? AND 
-							world = ?),
+					date,
+					value,
+					LAG ( value, 1, 0 ) OVER (partition BY uuid ORDER BY date ) prev_val,
+					world,
+					stat_category,
+					stat_name
+				FROM
+					historical_stats 
+				WHERE
+					stat_category = ? AND
+					stat_name = ? AND 
+					world = ?),
 				difference as (select
 					world,
 					stat_category,
 					stat_name, 
 					date, 
-					(value-prev_val) as diff_val from subtracting)
-				SELECT
+					(value-prev_val) as diff_val from subtracting),
+				summation as (SELECT
 					stat_category,
 					stat_name,
 					date,
 					world,  
-					sum(diff_val) over (order by date) AS value from difference 
-					ORDER BY date ASC`,
+					sum(diff_val) over (order by date) AS value from difference)
+				SELECT
+					stat_category,
+					stat_name,
+					date,
+					world,
+					value
+					FROM summation
+					WHERE date BETWEEN ? AND ? 
+					ORDER BY date ASC
+					`,
 			),
 			desc: prepareFunc(
 				`with subtracting as (SELECT
@@ -494,14 +512,23 @@ func prepareStatements(connection *sql.DB) *data {
 					stat_category,
 					stat_name, 
 					date, 
-					(value-prev_val) as diff_val from subtracting)
-				SELECT
+					(value-prev_val) as diff_val from subtracting),
+				summation as (SELECT
 					stat_category,
 					stat_name,
 					date,
 					world,  
-					sum(diff_val) over (order by date) AS value from difference 
-					ORDER BY date DESC`,
+					sum(diff_val) over (order by date) AS value from difference)
+				SELECT
+					stat_category,
+					stat_name,
+					date,
+					world,
+					value
+					FROM summation
+					WHERE date BETWEEN ? AND ? 
+					ORDER BY date DESC
+					`,
 			),
 		},
 		queryTotalStat: prepareFunc(
@@ -516,7 +543,7 @@ func prepareStatements(connection *sql.DB) *data {
 			WHERE stat_category = ? AND world = ?
 			`,
 		),
-		queryUuid: prepareFunc(
+		queryIndividual: prepareFunc(
 			`SELECT uuid, stat_category, stat_name, value, date, world 
 			FROM stats 
 			WHERE uuid = ? AND stat_category = ? AND stat_name = ? AND world = ?
@@ -583,6 +610,18 @@ func prepareStatements(connection *sql.DB) *data {
 			FROM usernames
 			WHERE uuid = ?
 			LIMIT 1;
+			`,
+		),
+		queryUuids: prepareFunc(
+			`SELECT uuid
+			FROM stats
+			GROUP BY uuid
+			`,
+		),
+		queryUsernameUuids: prepareFunc(
+			`SELECT uuid
+			FROM usernames
+			GROUP BY uuid
 			`,
 		),
 	}

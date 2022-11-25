@@ -20,6 +20,7 @@ type api_config_struct struct {
 	DefaultRespLimit int    `json:"default_response_limit"`
 	MaxRespLimit     int    `json:"max_response_limit"`
 	DefaultWorld     string `json:"default_world"`
+	Port             string `json:"port"`
 }
 
 type blacklist_struct struct {
@@ -29,9 +30,10 @@ type blacklist_struct struct {
 }
 
 type scan_config_struct struct {
-	PollSpeed int              `json:"polling_speed"`
-	Whitelist bool             `json:"invert_blacklist"`
-	Blacklist blacklist_struct `json:"blacklist"`
+	PollSpeed   int              `json:"polling_speed"`
+	Whitelist   bool             `json:"invert_blacklist"`
+	Blacklist   blacklist_struct `json:"blacklist"`
+	MojangFetch bool             `json:"fetch_mojang_usernames"`
 }
 
 type server_config_struct struct {

@@ -17,7 +17,8 @@ All configuration is done through the `config.json` file found in the root of th
     "api": {
         "default_response_limit": 5,
         "max_response_limit": 100,
-        "default_world": "world"
+        "default_world": "world",
+        "port": ":3000"
     },
     "polling": {
         "polling_speed": 5,
@@ -26,7 +27,8 @@ All configuration is done through the `config.json` file found in the root of th
             "operators": false,
             "banned": false,
             "list": []
-        }
+        },
+        "fetch_mojang_usernames": true
     }
 }
 ```
@@ -37,6 +39,8 @@ All configuration is done through the `config.json` file found in the root of th
   * `default_response_limit`: The default amount of statistics entries the API will return if `limit` is not specified in the query.
   * `max_response_limit`: The maximum amount of statistics entries the API will return.
   * `default_world`: The default Minecraft world that the API should return if `world` is not specified in the query. You may leave this blank if you don't want this behavior.
+  * `port`: The port the API will listen on.
+
 * `polling`:
   * `polling_speed`: How often (in minutes) the program should check player statistics files for changes. Recommend keeping this relatively high, as the database will store every change made to a statistic as a new row.
   * `invert_blacklist`: Turn the blacklist into a whitelist.
@@ -44,6 +48,7 @@ All configuration is done through the `config.json` file found in the root of th
     * `operators`: Stop logging stats from operators.
     * `banned`: Stop logging stats from banned players.
     * `list`: Arbitrary list of  blacklisted UUIDs
+  * `fetch_mojang_usernames`: Allow go-mine-stat to fetch players' usernames from Mojang's API if not found in local files.
 
 ## Polling statistics from multiple servers
 Under `server_list`, you can add as many servers or worlds as you want by adding more JSON objects.

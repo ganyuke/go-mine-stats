@@ -19,14 +19,15 @@ type pollster struct {
 
 func InitPollOfficial() *pollster {
 	polling_center := &pollster{ticker: time.NewTicker(time.Minute * time.Duration(config.Config_file.Scan.PollSpeed)), new: make(chan string)}
-	go polling_center.Vote()
+	go polling_center.vote()
 	return polling_center
 }
 
-func (pollster_object *pollster) Vote() {
+func (pollster_object *pollster) vote() {
 	for {
 		select {
 		case <-pollster_object.ticker.C:
+			go pollUsernames()
 			for _, v := range pollster_object.watching {
 				go pollDir(v)
 			}

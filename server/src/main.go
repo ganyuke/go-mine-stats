@@ -16,10 +16,13 @@ func main() {
 		log.Println("Config passed sanity check.")
 	}
 
+	// Create the object that holds file metadata to check against
+	stats.InitFileTracking()
+
 	// Collect JSONs that contain player display names and UUIDs and append to blacklist as needed.
 	names, err := stats.CollectUsernames()
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
 	// Create polling object to perodically check stats
@@ -36,8 +39,9 @@ func main() {
 		stats.CollectAllStats(false)
 	}
 
-	// Insert the usernames collected into the database
-	db.InsertUsernames(names)
+	// Check the database and see if we missed any
+	// If so, then fetch it from Mojang
+	stats.FetchMissing(names)
 
 	// Begin the webserver
 	routes.InitRoutes()

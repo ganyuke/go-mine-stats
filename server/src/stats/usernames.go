@@ -4,79 +4,77 @@ import (
 	"encoding/json"
 	"go-mine-stats/src/config"
 	"go-mine-stats/src/db"
+	"go-mine-stats/src/stats/fetch"
+	"io/fs"
+	"log"
 	"os"
 )
 
-func updateConfigBlacklist(list []db.Username) {
-	for _, list := range list {
-		config.Config_file.Scan.Blacklist.List = append(config.Config_file.Scan.Blacklist.List, list.Uuid)
+func uniqueList(target, source []config.Username) []config.Username {
+	if len(target) < 1 {
+		return source
 	}
-}
-
-func uniqueList(target, source []db.Username) []db.Username {
-	for _, orig_obj := range target {
-		for _, obj := range source {
-			if obj == orig_obj {
-				break
+loop:
+	for _, obj := range source {
+		for _, orig_obj := range target {
+			if obj.Uuid == orig_obj.Uuid {
+				continue loop
 			}
-			target = append(target, obj)
 		}
+		target = append(target, obj)
 	}
 	return target
 }
 
-func purgeList(target []db.Username, source []db.Username) []db.Username {
-	for i, orig_obj := range target {
-		for _, obj := range source {
-			if obj == orig_obj {
-				target = append(target[:i], target[i+1:]...)
+// func purgeList(target []config.Username, source []config.Username) []config.Username {
+// 	for i, orig_obj := range target {
+// 		for _, obj := range source {
+// 			if obj == orig_obj {
+// 				target = append(target[:i], target[i+1:]...)
+// 			}
+// 		}
+// 	}
+// 	return target
+// }
+
+func compareDb(database []config.Username, local []config.Username) []string {
+	var missingUsernames []string
+nextName:
+	for _, databasePlayer := range database {
+		for _, localPlayer := range local {
+			if databasePlayer.Uuid == localPlayer.Uuid {
+				continue nextName
 			}
 		}
+		missingUsernames = append(missingUsernames, databasePlayer.Uuid)
 	}
-	return target
+	return missingUsernames
 }
 
-func CollectUsernames() ([]db.Username, error) {
-	var names []db.Username
+func CollectUsernames() ([]config.Username, error) {
+	var names []config.Username
 
 	for _, serverDir := range config.Config_file.ServerList {
-		userCache, err := os.ReadFile(serverDir.ServerPath + "/usercache.json")
-		if err != nil {
-			return nil, err
-		}
-		whitelist, err := os.ReadFile(serverDir.ServerPath + "/whitelist.json")
-		if err != nil {
-			return nil, err
-		}
-		ops, err := os.ReadFile(serverDir.ServerPath + "/ops.json")
+		path := serverDir.ServerPath
+		filesToUpdate, err := checkDates(path)
 		if err != nil {
 			return nil, err
 		}
 
-		var user_cache_data []db.Username
-		err = json.Unmarshal(userCache, &user_cache_data)
-		if err != nil {
-			return nil, err
-		}
-		var whitelist_data []db.Username
-		err = json.Unmarshal(whitelist, &whitelist_data)
-		if err != nil {
-			return nil, err
-		}
-		var ops_data []db.Username
-		err = json.Unmarshal(ops, &ops_data)
-		if err != nil {
-			return nil, err
-		}
-
-		names = user_cache_data
-
-		uniqueList(names, whitelist_data)
-		if config.Config_file.Scan.Blacklist.ExOps {
-			purgeList(names, ops_data)
-			updateConfigBlacklist(ops_data)
-		} else {
-			uniqueList(names, ops_data)
+		for _, filePath := range filesToUpdate {
+			var data []config.Username
+			if config.Config_file.Scan.Blacklist.ExOps && filePath == path+"/ops.json" {
+				config.UpdateConfigBlacklist(data)
+			}
+			file, err := os.ReadFile(filePath)
+			if err != nil {
+				return nil, err
+			}
+			err = json.Unmarshal(file, &data)
+			if err != nil {
+				return nil, err
+			}
+			names = uniqueList(names, data)
 		}
 
 		if config.Config_file.Scan.Blacklist.ExBan {
@@ -84,14 +82,66 @@ func CollectUsernames() ([]db.Username, error) {
 			if err != nil {
 				return nil, err
 			}
-			var banned_data []db.Username
+			var banned_data []config.Username
 			err = json.Unmarshal(bans, &banned_data)
 			if err != nil {
 				return nil, err
 			}
-			purgeList(names, banned_data)
-			updateConfigBlacklist(banned_data)
+			config.UpdateConfigBlacklist(banned_data)
 		}
 	}
 	return names, nil
+}
+
+func pollUsernames() {
+	names, err := CollectUsernames()
+	if err != nil {
+		log.Fatal(err)
+	}
+	FetchMissing(names)
+}
+
+func FetchMissing(names []config.Username) {
+	if config.Config_file.Scan.MojangFetch {
+		missingNames := compareDb(db.GetUuidsFromStats(), names)
+		databaseNames := compareDb(db.GetUuidsFromUsernames(), names)
+		if len(missingNames) != len(databaseNames) {
+			for _, uuid := range missingNames {
+				playerInfo, err := fetch.FetchUsernameFromUUID(uuid)
+				if err != nil {
+					log.Println(err)
+				}
+				names = append(names, config.Username{Uuid: playerInfo.Id, Name: playerInfo.Name})
+			}
+		}
+	}
+}
+
+func checkDates(path string) ([]string, error) {
+	var files []fs.FileInfo
+	var filesToUpdate []string
+
+	userCache, err := os.Stat(path + "/usercache.json")
+	if err != nil {
+		return nil, err
+	}
+	whitelist, err := os.Stat(path + "/whitelist.json")
+	if err != nil {
+		return nil, err
+	}
+	ops, err := os.Stat(path + "/ops.json")
+	if err != nil {
+		return nil, err
+	}
+	files = append(files, userCache, whitelist, ops)
+
+	for _, fileInfo := range files {
+		file_path := path + "/" + fileInfo.Name()
+		if fileInfo.Size() != old_tracker.size[file_path] || fileInfo.ModTime() != old_tracker.date[file_path] {
+			old_tracker.size[file_path] = fileInfo.Size()
+			old_tracker.date[file_path] = fileInfo.ModTime()
+			filesToUpdate = append(filesToUpdate, file_path)
+		}
+	}
+	return filesToUpdate, nil
 }

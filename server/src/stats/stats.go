@@ -115,8 +115,11 @@ player:
 	}
 }
 
-func CollectAllStats(get_stats bool) {
+func InitFileTracking() {
 	old_tracker = &old_file_info{size: map[string]int64{}, date: map[string]time.Time{}}
+}
+
+func CollectAllStats(get_stats bool) {
 	for _, v := range config.Config_file.ServerList {
 		var get_stats_for_world int
 		if get_stats {

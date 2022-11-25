@@ -8,10 +8,17 @@
     "api": {
         "default_response_limit": 5,
         "max_response_limit": 100,
-        "default_world": "world"
+        "default_world": "world",
+        "port": ":3000"
     },
     "polling": {
         "polling_speed": 5,
-        "blacklist": []
+        "invert_blacklist": false,
+        "blacklist": {
+            "operators": false,
+            "banned": false,
+            "list": ["0b11f801-59d4-4f17-b2c4-8186001d1111"]
+        },
+        "fetch_mojang_usernames": true
     }
 }
