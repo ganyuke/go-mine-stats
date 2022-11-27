@@ -41,7 +41,13 @@ func main() {
 
 	// Check the database and see if we missed any
 	// If so, then fetch it from Mojang
-	stats.FetchMissing(names)
+	names = stats.FetchMissing(names)
+
+	// Add names to database
+	err = db.InsertUsernames(names)
+	if err != nil {
+		log.Println(err)
+	}
 
 	// Begin the webserver
 	routes.InitRoutes()

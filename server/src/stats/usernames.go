@@ -96,12 +96,16 @@ func CollectUsernames() ([]config.Username, error) {
 func pollUsernames() {
 	names, err := CollectUsernames()
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
-	FetchMissing(names)
+	names = FetchMissing(names)
+	err = db.InsertUsernames(names)
+	if err != nil {
+		log.Println(err)
+	}
 }
 
-func FetchMissing(names []config.Username) {
+func FetchMissing(names []config.Username) []config.Username {
 	if config.Config_file.Scan.MojangFetch {
 		missingNames := compareDb(db.GetUuidsFromStats(), names)
 		databaseNames := compareDb(db.GetUuidsFromUsernames(), names)
@@ -115,6 +119,7 @@ func FetchMissing(names []config.Username) {
 			}
 		}
 	}
+	return names
 }
 
 func checkDates(path string) ([]string, error) {
