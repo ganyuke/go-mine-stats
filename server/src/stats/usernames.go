@@ -17,7 +17,7 @@ func uniqueList(target, source []config.Username) []config.Username {
 loop:
 	for _, obj := range source {
 		for _, orig_obj := range target {
-			if obj.Uuid == orig_obj.Uuid {
+			if obj.Uuid == orig_obj.Uuid && obj.Name == orig_obj.Name {
 				continue loop
 			}
 		}
