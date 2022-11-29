@@ -53,5 +53,15 @@ func FetchUsernameFromUUID(uuid string) (Uuid_to_username, error) {
 		return mojang_response, err
 	}
 
+	mojang_response.Id = mojangApiToUuid(mojang_response.Id)
+
 	return mojang_response, nil
+}
+
+func mojangApiToUuid(undashed string) string {
+	var dashPositions = [...]int{8, 13, 18, 23}
+	for _, v := range dashPositions {
+		undashed = undashed[:v] + "-" + undashed[v:]
+	}
+	return undashed
 }
