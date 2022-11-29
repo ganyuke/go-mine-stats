@@ -17,7 +17,8 @@ func uniqueList(target, source []config.Username) []config.Username {
 loop:
 	for _, obj := range source {
 		for _, orig_obj := range target {
-			if obj.Uuid == orig_obj.Uuid && obj.Name == orig_obj.Name {
+			if obj.Uuid == orig_obj.Uuid && (obj.Name == orig_obj.Name ||
+				(obj.Name == "unknown" && orig_obj.Name != "unknown")) {
 				continue loop
 			}
 		}
@@ -26,115 +27,116 @@ loop:
 	return target
 }
 
-// func purgeList(target []config.Username, source []config.Username) []config.Username {
-// 	for i, orig_obj := range target {
-// 		for _, obj := range source {
-// 			if obj == orig_obj {
-// 				target = append(target[:i], target[i+1:]...)
-// 			}
-// 		}
-// 	}
-// 	return target
-// }
+func updateUuidToUsernameList(serverDirectory string, namelessUuids []string) {
+	var allPlayers []config.Username
+	var missingUsernames []config.Username
+	knownPlayers := db.GetPlayers()
+	collectedPlayers, err := collectUsernames(serverDirectory)
+	if err != nil {
+		log.Println(err)
+	}
 
-func compareDb(database []config.Username, local []config.Username) []string {
-	var missingUsernames []string
-nextName:
-	for _, databasePlayer := range database {
-		for _, localPlayer := range local {
-			if databasePlayer.Uuid == localPlayer.Uuid {
-				continue nextName
+nextPlayer:
+	for _, uuid := range namelessUuids {
+		for _, player := range collectedPlayers {
+			if player.Uuid == uuid {
+				continue nextPlayer
 			}
 		}
-		missingUsernames = append(missingUsernames, databasePlayer.Uuid)
+		missingUsernames = append(missingUsernames, config.Username{Uuid: uuid})
 	}
-	return missingUsernames
+
+	for _, knownPlayer := range knownPlayers {
+		for i, missingPlayer := range missingUsernames {
+			if missingPlayer.Uuid == knownPlayer.Uuid && knownPlayer.Name != "" {
+				missingUsernames = append(missingUsernames[:i], missingUsernames[i+1:]...)
+			}
+		}
+		for i, collectedPlayer := range collectedPlayers {
+			if collectedPlayer.Uuid == knownPlayer.Uuid && knownPlayer.Name != "" && knownPlayer.Name != "unknown" {
+				collectedPlayers = append(collectedPlayers[:i], collectedPlayers[i+1:]...)
+			}
+		}
+	}
+
+	retrievedPlayers, failedPlayers := fetchMissing(missingUsernames)
+
+	allPlayers = append(allPlayers, collectedPlayers...)
+	allPlayers = append(allPlayers, retrievedPlayers...)
+	allPlayers = append(allPlayers, failedPlayers...)
+
+	db.InsertUsernames(allPlayers)
 }
 
-func CollectUsernames() ([]config.Username, error) {
+func collectUsernames(serverPath string) ([]config.Username, error) {
 	var names []config.Username
 
-	for _, serverDir := range config.Config_file.ServerList {
-		path := serverDir.ServerPath
-		filesToUpdate, err := checkDates(path)
+	filesToUpdate, err := checkDates(serverPath)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, filePath := range filesToUpdate {
+		var data []config.Username
+		if config.Config_file.Scan.Blacklist.ExOps && filePath == serverPath+"ops.json" {
+			config.UpdateConfigBlacklist(data)
+		}
+		file, err := os.ReadFile(filePath)
 		if err != nil {
 			return nil, err
 		}
-
-		for _, filePath := range filesToUpdate {
-			var data []config.Username
-			if config.Config_file.Scan.Blacklist.ExOps && filePath == path+"/ops.json" {
-				config.UpdateConfigBlacklist(data)
-			}
-			file, err := os.ReadFile(filePath)
-			if err != nil {
-				return nil, err
-			}
-			err = json.Unmarshal(file, &data)
-			if err != nil {
-				return nil, err
-			}
-			names = uniqueList(names, data)
+		err = json.Unmarshal(file, &data)
+		if err != nil {
+			return nil, err
 		}
+		names = uniqueList(names, data)
+	}
 
-		if config.Config_file.Scan.Blacklist.ExBan {
-			bans, err := os.ReadFile(serverDir.ServerPath + "/banned-players.json")
-			if err != nil {
-				return nil, err
-			}
-			var banned_data []config.Username
-			err = json.Unmarshal(bans, &banned_data)
-			if err != nil {
-				return nil, err
-			}
-			config.UpdateConfigBlacklist(banned_data)
+	if config.Config_file.Scan.Blacklist.ExBan {
+		bans, err := os.ReadFile(serverPath + "banned-players.json")
+		if err != nil {
+			return nil, err
 		}
+		var banned_data []config.Username
+		err = json.Unmarshal(bans, &banned_data)
+		if err != nil {
+			return nil, err
+		}
+		config.UpdateConfigBlacklist(banned_data)
 	}
 	return names, nil
 }
 
-func pollUsernames() {
-	names, err := CollectUsernames()
-	if err != nil {
-		log.Println(err)
-	}
-	names = FetchMissing(names)
-	err = db.InsertUsernames(names)
-	if err != nil {
-		log.Println(err)
-	}
-}
+func fetchMissing(missingNames []config.Username) ([]config.Username, []config.Username) {
+	var acquiredNames []config.Username
+	var unknownNames []config.Username
 
-func FetchMissing(names []config.Username) []config.Username {
 	if config.Config_file.Scan.MojangFetch {
-		missingNames := compareDb(db.GetUuidsFromStats(), names)
-		databaseNames := compareDb(db.GetUuidsFromUsernames(), names)
-		if len(missingNames) != len(databaseNames) {
-			for _, uuid := range missingNames {
-				playerInfo, err := fetch.FetchUsernameFromUUID(uuid)
-				if err != nil {
-					log.Println(err)
-				}
-				names = append(names, config.Username{Uuid: playerInfo.Id, Name: playerInfo.Name})
+		for _, player := range missingNames {
+			playerInfo, err := fetch.FetchUsernameFromUUID(player.Uuid)
+			if err != nil {
+				log.Println("Error: recieved response " + err.Error() + " while fetching UUID " + player.Uuid)
+				unknownNames = append(unknownNames, config.Username{Uuid: player.Uuid, Name: ""})
 			}
+			acquiredNames = append(acquiredNames, config.Username{Uuid: playerInfo.Id, Name: playerInfo.Name})
 		}
 	}
-	return names
+	return acquiredNames, unknownNames
 }
 
 func checkDates(path string) ([]string, error) {
 	var files []fs.FileInfo
 	var filesToUpdate []string
 
-	userCache, err := os.Stat(path + "/usercache.json")
+	userCache, err := os.Stat(path + "usercache.json")
 	if err != nil {
 		return nil, err
 	}
-	whitelist, err := os.Stat(path + "/whitelist.json")
+	whitelist, err := os.Stat(path + "whitelist.json")
 	if err != nil {
 		return nil, err
 	}
-	ops, err := os.Stat(path + "/ops.json")
+	ops, err := os.Stat(path + "ops.json")
 	if err != nil {
 		return nil, err
 	}

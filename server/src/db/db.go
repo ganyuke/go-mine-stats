@@ -86,7 +86,7 @@ func UpdatePlayerStat(data *Update_data) error {
 		return err
 	}
 
-	log.Println("COMMIT BEGIN")
+	log.Println("COMMIT BEGIN... ")
 
 	for _, player_entries := range data.Statistics {
 		uuid := player_entries.Uuid
@@ -95,8 +95,6 @@ func UpdatePlayerStat(data *Update_data) error {
 		item := player_entries.Item
 		world := player_entries.World
 		value := player_entries.Value
-
-		// log.Println("Inserting in " + category + " the item " + item + " for player " + uuid)
 
 		var check_obj checkers
 
@@ -108,7 +106,7 @@ func UpdatePlayerStat(data *Update_data) error {
 
 		// Drop change if row is exactly the same.
 		if check_obj.chess == 1 {
-			log.Println("No difference in statistic, dropping change...")
+			log.Println("No difference in statistic, dropping change... ")
 			return nil
 		}
 
@@ -151,7 +149,7 @@ func UpdatePlayerStat(data *Update_data) error {
 		return err
 	}
 
-	log.Println("COMMIT END")
+	log.Print("COMMIT END.")
 
 	return nil
 
@@ -282,7 +280,7 @@ func GetUuidsFromStats() []config.Username {
 	return makeListUsernames(rows)
 }
 
-func GetUuidsFromUsernames() []config.Username {
+func GetPlayers() []config.Username {
 	rows, err := Monika.queryUsernameUuids.Query()
 	log_error(err, "E_QUERY_FAIL")
 	return makeListUsernames(rows)
@@ -310,7 +308,7 @@ func makeListUsernames(rows *sql.Rows) []config.Username {
 	var player_list config.Username
 	var list []config.Username
 	for rows.Next() {
-		rows.Scan(&player_list.Uuid)
+		rows.Scan(&player_list.Uuid, &player_list.Name)
 		list = append(list, player_list)
 	}
 	return list
@@ -363,6 +361,11 @@ func DbConnect(firstRun bool) *data {
 
 func initDb(db *sql.DB) {
 	tables := `
+	CREATE TABLE usernames (
+		num INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+		uuid TEXT UNIQUE NOT NULL,
+		name TEXT NOT NULL
+	);
 	CREATE TABLE stats (
 		num INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
 		uuid TEXT NOT NULL,
@@ -370,7 +373,8 @@ func initDb(db *sql.DB) {
 		stat_category TEXT NOT NULL,
 		stat_name TEXT NOT NULL,
 		value INTEGER NOT NULL,
-		world TEXT NOT NULL
+		world TEXT NOT NULL,
+		FOREIGN KEY (uuid) REFERENCES usernames (uuid)
 	);	
 	CREATE TABLE historical_stats (
 		num INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -379,12 +383,8 @@ func initDb(db *sql.DB) {
 		stat_category TEXT NOT NULL,
 		stat_name TEXT NOT NULL,
 		value INTEGER NOT NULL,
-		world TEXT NOT NULL
-	);
-	CREATE TABLE usernames (
-		num INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-		uuid TEXT UNIQUE NOT NULL,
-		name TEXT NOT NULL
+		world TEXT NOT NULL,
+		FOREIGN KEY (uuid) REFERENCES usernames (uuid)
 	);
 	`
 	_, err := db.Exec(tables)
@@ -619,7 +619,7 @@ func prepareStatements(connection *sql.DB) *data {
 			`,
 		),
 		queryUsernameUuids: prepareFunc(
-			`SELECT uuid
+			`SELECT uuid, name
 			FROM usernames
 			GROUP BY uuid
 			`,

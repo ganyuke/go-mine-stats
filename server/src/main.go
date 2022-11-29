@@ -19,12 +19,6 @@ func main() {
 	// Create the object that holds file metadata to check against
 	stats.InitFileTracking()
 
-	// Collect JSONs that contain player display names and UUIDs and append to blacklist as needed.
-	names, err := stats.CollectUsernames()
-	if err != nil {
-		log.Println(err)
-	}
-
 	// Create polling object to perodically check stats
 	stats.Poll_official = stats.InitPollOfficial()
 
@@ -37,16 +31,6 @@ func main() {
 		db.Monika = db.DbConnect(false)
 
 		stats.CollectAllStats(false)
-	}
-
-	// Check the database and see if we missed any
-	// If so, then fetch it from Mojang
-	names = stats.FetchMissing(names)
-
-	// Add names to database
-	err = db.InsertUsernames(names)
-	if err != nil {
-		log.Println(err)
 	}
 
 	// Begin the webserver

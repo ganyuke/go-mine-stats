@@ -27,7 +27,6 @@ func (pollster_object *pollster) vote() {
 	for {
 		select {
 		case <-pollster_object.ticker.C:
-			go pollUsernames()
 			for _, v := range pollster_object.watching {
 				go pollDir(v)
 			}

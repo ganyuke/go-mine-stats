@@ -73,6 +73,7 @@ func collectPlayerStat(file_location, uuid, world string, date time.Time) player
 }
 
 func loopStats(stats_directory, world_name string, directory_members []fs.DirEntry, operation int) {
+	var statsFilesUuids []string
 player:
 	for _, player_json := range directory_members {
 		file_name := player_json.Name()
@@ -82,6 +83,7 @@ player:
 		if extension == ".json" {
 
 			player_uuid := strings.Trim(file_name, extension)
+			statsFilesUuids = append(statsFilesUuids, player_uuid)
 
 			for _, uuid := range config.Config_file.Scan.Blacklist.List {
 				if uuid == player_uuid && !config.Config_file.Scan.Whitelist {
@@ -102,17 +104,20 @@ player:
 				old_tracker.size[file_path] = file_info.Size()
 				old_tracker.date[file_path] = file_info.ModTime()
 				date := file_info.ModTime().UTC().Round(time.Second)
-				collectPlayerStat(file_path, player_uuid, world_name, date)
+				defer collectPlayerStat(file_path, player_uuid, world_name, date)
 			case checkImportStatistics:
 				if file_info.Size() != old_tracker.size[file_path] || file_info.ModTime() != old_tracker.date[file_path] {
 					old_tracker.size[file_path] = file_info.Size()
 					old_tracker.date[file_path] = file_info.ModTime()
 					date := file_info.ModTime().UTC().Round(time.Second)
-					collectPlayerStat(file_path, player_uuid, world_name, date)
+					defer collectPlayerStat(file_path, player_uuid, world_name, date)
 				}
 			}
 		}
 	}
+	concat := strings.Split(stats_directory, world_name)
+	serverDirectory := concat[0]
+	updateUuidToUsernameList(serverDirectory, statsFilesUuids)
 }
 
 func InitFileTracking() {
