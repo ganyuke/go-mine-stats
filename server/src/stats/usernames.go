@@ -118,7 +118,7 @@ func fetchMissing(missingNames []config.Username) ([]config.Username, []config.U
 				log.Println("Error: recieved response " + err.Error() + " while fetching UUID " + player.Uuid)
 				unknownNames = append(unknownNames, config.Username{Uuid: player.Uuid, Name: ""})
 			}
-			acquiredNames = append(acquiredNames, config.Username{Uuid: playerInfo.Id, Name: playerInfo.Name})
+			acquiredNames = append(acquiredNames, config.Username{Uuid: player.Uuid, Name: playerInfo.Name})
 		}
 	}
 	return acquiredNames, unknownNames
