@@ -63,7 +63,7 @@ func guideAggregate(c *fiber.Ctx) error {
 	statistic := c.Query("stat")
 	world := c.Query("world", default_world)
 
-	startDate, endDate := parseDate(c.Query("startDate")), parseDate(c.Query("endDate", time.Now().Format(time.RFC3339)))
+	startDate, endDate := parseDate(c.Query("from")), parseDate(c.Query("to", time.Now().Format(time.RFC3339)))
 
 	switch statistic {
 	case "all": // Return sum of all stats in a given category (Statistic: "all")
@@ -76,7 +76,7 @@ func guideAggregate(c *fiber.Ctx) error {
 		}
 		return c.JSON(result)
 	default: // (Statistic specified)
-		if c.Query("startDate") != "" { // Return cumulative statistic if given range
+		if c.Query("from") != "" { // Return cumulative statistic if given range
 			result := db.GetCumulativeStat(category, statistic, world, sortOrder, startDate, endDate)
 			return c.JSON(result)
 		} else {
@@ -122,7 +122,7 @@ func guidePlayerStatistic(c *fiber.Ctx) error {
 	world := c.Query("world", default_world)
 	uuid := c.Query("uuid")
 
-	startDate, endDate := parseDate(c.Query("startDate")), parseDate(c.Query("endDate", time.Now().Format(time.RFC3339)))
+	startDate, endDate := parseDate(c.Query("from")), parseDate(c.Query("to", time.Now().Format(time.RFC3339)))
 
 	if uuid == "" {
 		return c.SendString("E_MISSING_UUID")
@@ -136,7 +136,7 @@ func guidePlayerStatistic(c *fiber.Ctx) error {
 		return c.SendStatus(403)
 	}
 
-	if c.Query("startDate") != "" {
+	if c.Query("from") != "" {
 		// If date range specified, do special things
 		statistic := db.GetStatDateRange(uuid, category, statistic, world, startDate, endDate)
 		return c.JSON(statistic)
