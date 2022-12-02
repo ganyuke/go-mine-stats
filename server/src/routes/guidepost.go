@@ -17,17 +17,20 @@ func log_error(err error, context string) {
 	}
 }
 
-func convertLimit(limit string) string {
+func convertLimit(limit string) (string, error) {
 	maxRespLimit := config.Config_file.API.MaxRespLimit
 	maxRespString := strconv.Itoa(maxRespLimit)
-	limitNum, _ := strconv.Atoi(limit)
+	limitNum, err := strconv.Atoi(limit)
+	if err != nil {
+		return limit, err
+	}
 	if limitNum > maxRespLimit {
 		limit = maxRespString
 	}
 	if limitNum <= 0 {
 		limit = "1"
 	}
-	return limit
+	return limit, nil
 }
 
 func convertOrder(order string) string {
@@ -41,14 +44,15 @@ func convertOrder(order string) string {
 	}
 }
 
-func parseDate(date string) time.Time {
+func parseDate(date string) (time.Time, error) {
 	dateParsed, err := time.Parse(time.RFC3339, date)
 	if err != nil {
 		unixTime, err := strconv.ParseInt(date, 10, 64)
 		dateParsed = time.Unix(unixTime, 0)
-		log_error(err, "E_TIMEPARSE_FAIL")
+		log_error(err, "E_TIME_PARSE_FAIL")
+		return dateParsed, err
 	}
-	return dateParsed
+	return dateParsed, nil
 }
 
 func guideAggregate(c *fiber.Ctx) error {
@@ -56,14 +60,24 @@ func guideAggregate(c *fiber.Ctx) error {
 	defaultRespString := strconv.Itoa(config.Config_file.API.DefaultRespLimit)
 	default_world := config.Config_file.API.DefaultWorld
 
-	limit := convertLimit(c.Query("limit", defaultRespString))
+	limit, err := convertLimit(c.Query("limit", defaultRespString))
+	if err != nil {
+		return c.SendString("E_LIMIT_PRASE_FAIL")
+	}
 	sortOrder := convertOrder(c.Query("order"))
 
 	category := c.Params("category")
 	statistic := c.Query("stat")
 	world := c.Query("world", default_world)
 
-	startDate, endDate := parseDate(c.Query("from")), parseDate(c.Query("to", time.Now().Format(time.RFC3339)))
+	startDate, err := parseDate(c.Query("from"))
+	if err != nil {
+		return c.SendString("E_TIME_PRRSE_FAIL")
+	}
+	endDate, err := parseDate(c.Query("to", time.Now().Format(time.RFC3339)))
+	if err != nil {
+		return c.SendString("E_TIME_PRRSE_FAIL")
+	}
 
 	switch statistic {
 	case "all": // Return sum of all stats in a given category (Statistic: "all")
@@ -94,7 +108,10 @@ func guideTopStatistic(c *fiber.Ctx) error {
 	defaultRespString := strconv.Itoa(config.Config_file.API.DefaultRespLimit)
 	default_world := config.Config_file.API.DefaultWorld
 
-	limit := convertLimit(c.Query("limit", defaultRespString))
+	limit, err := convertLimit(c.Query("limit", defaultRespString))
+	if err != nil {
+		return c.SendString("E_LIMIT_PRASE_FAIL")
+	}
 	sortOrder := convertOrder(c.Query("order"))
 
 	category := c.Params("category")
@@ -122,7 +139,14 @@ func guidePlayerStatistic(c *fiber.Ctx) error {
 	world := c.Query("world", default_world)
 	uuid := c.Query("uuid")
 
-	startDate, endDate := parseDate(c.Query("from")), parseDate(c.Query("to", time.Now().Format(time.RFC3339)))
+	startDate, err := parseDate(c.Query("from"))
+	if err != nil {
+		return c.SendString("E_TIME_PRRSE_FAIL")
+	}
+	endDate, err := parseDate(c.Query("to", time.Now().Format(time.RFC3339)))
+	if err != nil {
+		return c.SendString("E_TIME_PRRSE_FAIL")
+	}
 
 	if uuid == "" {
 		return c.SendString("E_MISSING_UUID")
