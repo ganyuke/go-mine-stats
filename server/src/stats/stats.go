@@ -38,6 +38,13 @@ type old_file_info struct {
 	date map[string]time.Time
 }
 
+func (metadata *old_file_info) updateRecord(filePath string, fileInfo fs.FileInfo) time.Time {
+	metadata.size[filePath] = fileInfo.Size()
+	metadata.date[filePath] = fileInfo.ModTime()
+	date := fileInfo.ModTime().UTC().Round(time.Second)
+	return date
+}
+
 func collectPlayerStat(file_location, uuid, world string, date time.Time) player_statistics {
 
 	println("Collecting stats for player " + uuid)
@@ -78,40 +85,36 @@ player:
 	for _, player_json := range directory_members {
 		file_name := player_json.Name()
 		extension := filepath.Ext(file_name)
+
+		if extension != ".json" {
+			continue
+		}
+
 		file_path := stats_directory + "/" + file_name
+		player_uuid := strings.Trim(file_name, extension)
+		statsFilesUuids = append(statsFilesUuids, player_uuid)
 
-		if extension == ".json" {
-
-			player_uuid := strings.Trim(file_name, extension)
-			statsFilesUuids = append(statsFilesUuids, player_uuid)
-
-			for _, uuid := range config.Config_file.Scan.Blacklist.List {
-				if uuid == player_uuid && !config.Config_file.Scan.Whitelist {
-					continue player
-				} else if uuid != player_uuid && config.Config_file.Scan.Whitelist {
-					continue player
-				}
+		for _, uuid := range config.Config_file.Scan.Blacklist.List {
+			if uuid == player_uuid && !config.Config_file.Scan.Whitelist {
+				continue player
+			} else if uuid != player_uuid && config.Config_file.Scan.Whitelist {
+				continue player
 			}
+		}
 
-			file_info, err := os.Stat(file_path)
-			log_error(err, "Error while checking file information.")
+		file_info, err := os.Stat(file_path)
+		log_error(err, "Error while checking file information.")
 
-			switch operation {
-			case logFileDates:
-				old_tracker.size[file_path] = file_info.Size()
-				old_tracker.date[file_path] = file_info.ModTime()
-			case importStatistics:
-				old_tracker.size[file_path] = file_info.Size()
-				old_tracker.date[file_path] = file_info.ModTime()
-				date := file_info.ModTime().UTC().Round(time.Second)
+		switch operation {
+		case logFileDates:
+			old_tracker.updateRecord(file_path, file_info)
+		case importStatistics:
+			date := old_tracker.updateRecord(file_path, file_info)
+			defer collectPlayerStat(file_path, player_uuid, world_name, date)
+		case checkImportStatistics:
+			if file_info.Size() != old_tracker.size[file_path] || file_info.ModTime() != old_tracker.date[file_path] {
+				date := old_tracker.updateRecord(file_path, file_info)
 				defer collectPlayerStat(file_path, player_uuid, world_name, date)
-			case checkImportStatistics:
-				if file_info.Size() != old_tracker.size[file_path] || file_info.ModTime() != old_tracker.date[file_path] {
-					old_tracker.size[file_path] = file_info.Size()
-					old_tracker.date[file_path] = file_info.ModTime()
-					date := file_info.ModTime().UTC().Round(time.Second)
-					defer collectPlayerStat(file_path, player_uuid, world_name, date)
-				}
 			}
 		}
 	}

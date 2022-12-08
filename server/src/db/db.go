@@ -107,7 +107,7 @@ func UpdatePlayerStat(data *Update_data) error {
 		// Drop change if row is exactly the same.
 		if check_obj.chess == 1 {
 			log.Println("No difference in statistic, dropping change... ")
-			return nil
+			continue
 		}
 
 		err = Monika.checkExist.QueryRowContext(ctx, uuid, category, item, world).Scan(&check_obj.chess)
