@@ -70,14 +70,8 @@ func guideAggregate(c *fiber.Ctx) error {
 	statistic := c.Query("stat")
 	world := c.Query("world", default_world)
 
-	startDate, err := parseDate(c.Query("from"))
-	if err != nil {
-		return c.SendString("E_TIME_PRRSE_FAIL")
-	}
-	endDate, err := parseDate(c.Query("to", time.Now().Format(time.RFC3339)))
-	if err != nil {
-		return c.SendString("E_TIME_PRRSE_FAIL")
-	}
+	startDate, _ := parseDate(c.Query("from"))
+	endDate, _ := parseDate(c.Query("to", time.Now().Format(time.RFC3339)))
 
 	switch statistic {
 	case "all": // Return sum of all stats in a given category (Statistic: "all")
@@ -139,14 +133,8 @@ func guidePlayerStatistic(c *fiber.Ctx) error {
 	world := c.Query("world", default_world)
 	uuid := c.Query("uuid")
 
-	startDate, err := parseDate(c.Query("from"))
-	if err != nil {
-		return c.SendString("E_TIME_PRRSE_FAIL")
-	}
-	endDate, err := parseDate(c.Query("to", time.Now().Format(time.RFC3339)))
-	if err != nil {
-		return c.SendString("E_TIME_PRRSE_FAIL")
-	}
+	startDate, _ := parseDate(c.Query("from"))
+	endDate, _ := parseDate(c.Query("to", time.Now().Format(time.RFC3339)))
 
 	if uuid == "" {
 		return c.SendString("E_MISSING_UUID")

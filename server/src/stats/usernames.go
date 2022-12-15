@@ -113,12 +113,14 @@ func fetchMissing(missingNames []config.Username) ([]config.Username, []config.U
 
 	if config.Config_file.Scan.MojangFetch {
 		for _, player := range missingNames {
+			log.Println("Could not find username for " + player.Uuid + ". Fetching... ")
 			playerInfo, err := fetch.FetchUsernameFromUUID(player.Uuid)
 			if err != nil {
 				log.Println("Error: recieved response " + err.Error() + " while fetching UUID " + player.Uuid)
 				unknownNames = append(unknownNames, config.Username{Uuid: player.Uuid, Name: ""})
 			}
 			acquiredNames = append(acquiredNames, config.Username{Uuid: player.Uuid, Name: playerInfo.Name})
+			log.Print("Username found: " + playerInfo.Name)
 		}
 	}
 	return acquiredNames, unknownNames

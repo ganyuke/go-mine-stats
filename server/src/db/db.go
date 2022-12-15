@@ -106,7 +106,7 @@ func UpdatePlayerStat(data *Update_data) error {
 
 		// Drop change if row is exactly the same.
 		if check_obj.chess == 1 {
-			log.Println("No difference in statistic, dropping change... ")
+			// log.Println("No difference in statistic, dropping change... ")
 			continue
 		}
 
