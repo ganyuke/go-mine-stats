@@ -47,8 +47,8 @@ type config_struct struct {
 	Scan       scan_config_struct     `json:"polling"`
 }
 
-func LoadConfig() *config_struct {
-	config_json, err := os.ReadFile("../../config.json")
+func LoadConfig(path string) *config_struct {
+	config_json, err := os.ReadFile(path)
 	log_error(err, "Error while reading config file:")
 
 	var config config_struct

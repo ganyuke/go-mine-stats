@@ -52,11 +52,6 @@ nextPlayer:
 				missingUsernames = append(missingUsernames[:i], missingUsernames[i+1:]...)
 			}
 		}
-		for i, collectedPlayer := range collectedPlayers {
-			if collectedPlayer.Uuid == knownPlayer.Uuid && knownPlayer.Name != "" && knownPlayer.Name != "unknown" {
-				collectedPlayers = append(collectedPlayers[:i], collectedPlayers[i+1:]...)
-			}
-		}
 	}
 
 	retrievedPlayers, failedPlayers := fetchMissing(missingUsernames)
