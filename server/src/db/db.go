@@ -350,8 +350,8 @@ func makeList(rows *sql.Rows) []Stat_item {
 	return list
 }
 
-func DbConnect(firstRun bool) *data {
-	db, err := sql.Open("sqlite3", "./stats.db")
+func DbConnect(firstRun bool, dbPath string) *data {
+	db, err := sql.Open("sqlite3", dbPath)
 	if firstRun {
 		initDb(db)
 	}

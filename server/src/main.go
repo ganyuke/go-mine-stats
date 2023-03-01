@@ -25,21 +25,27 @@ func main() {
 		log.Println("Config passed sanity check.")
 	}
 
-	// Create the object that holds file metadata to check against
-	stats.InitFileTracking()
+	if config.Config_file.Scan.Enabled {
+		// Create the object that holds file metadata to check against
+		stats.InitFileTracking()
 
-	// Create polling object to perodically check stats
-	stats.Poll_official = stats.InitPollOfficial()
+		// Create polling object to perodically check stats
+		stats.Poll_official = stats.InitPollOfficial()
+	}
 
 	// Create database and log all initial player stats
 	if _, err := os.Stat(dbPath); err != nil {
-		db.Monika = db.DbConnect(true)
+		db.Monika = db.DbConnect(true, dbPath)
 
-		stats.CollectAllStats(true)
+		if config.Config_file.Scan.Enabled {
+			stats.CollectAllStats(true)
+		}
 	} else {
-		db.Monika = db.DbConnect(false)
+		db.Monika = db.DbConnect(false, dbPath)
 
-		stats.CollectAllStats(false)
+		if config.Config_file.Scan.Enabled {
+			stats.CollectAllStats(true)
+		}
 	}
 
 	// Begin the webserver

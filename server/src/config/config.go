@@ -30,6 +30,7 @@ type blacklist_struct struct {
 }
 
 type scan_config_struct struct {
+	Enabled     bool             `json:"enabled"`
 	PollSpeed   int              `json:"polling_speed"`
 	Whitelist   bool             `json:"invert_blacklist"`
 	Blacklist   blacklist_struct `json:"blacklist"`

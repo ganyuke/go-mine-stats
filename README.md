@@ -42,6 +42,7 @@ All configuration is done through the `config.json` file found in the root of th
   * `port`: The port the API will listen on.
 
 * `polling`:
+  * `enabled`: Controls whether polling will occur. Set to false if you wish to just serve existing statistics from the database.
   * `polling_speed`: How often (in minutes) the program should check player statistics files for changes. Recommend keeping this relatively high, as the database will store every change made to a statistic as a new row.
   * `invert_blacklist`: Turn the blacklist into a whitelist.
   * `blacklist`: UUIDs whose statistics stop being scanned into the database. **Note:** This will NOT remove player data already scanned inside the database.

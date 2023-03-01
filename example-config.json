@@ -1,0 +1,25 @@
+{
+    "server_list": [
+        {
+            "server_path": "../../example-mc",
+            "world_name": "world"
+        }
+    ],
+    "api": {
+        "default_response_limit": 5,
+        "max_response_limit": 100,
+        "default_world": "world",
+        "port": ":3000"
+    },
+    "polling": {
+        "enabled": true,
+        "polling_speed": 5,
+        "invert_blacklist": false,
+        "blacklist": {
+            "operators": false,
+            "banned": false,
+            "list": ["0b11f801-59d4-4f17-b2c4-8186001d1111"]
+        },
+        "fetch_mojang_usernames": true
+    }
+}
