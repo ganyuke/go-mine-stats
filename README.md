@@ -1,7 +1,7 @@
 # go-mine-stats
-A Go-based API backend to access player statistics, inspired by [MinecraftStats](https://github.com/pdinklag/MinecraftStats). In theory, compatible with any modded statistics (such as items) as well.
+A Go-based API backend to constantly poll player statistics. In theory, compatible with any modded statistics (such as items) as well. Expects to be run directly on a file system, but can be Dockerized.
 
-**This project is in a barely usable state. Expect breaking changes often.**
+Cannot currently access through FTP.
 
 # Configuration
 All configuration is done through the `config.json` file found in the root of the project.
