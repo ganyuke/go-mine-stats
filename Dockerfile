@@ -1,5 +1,5 @@
-FROM alpine:edge AS build
-RUN apk add --no-cache --update go gcc g++
+FROM golang:1.20.3-alpine3.17
+RUN apk --no-cache add gcc musl-dev
 
 WORKDIR /app
 
