@@ -289,7 +289,7 @@ func GetPlayers() []config.Username {
 func GetUsernameFromUuid(uuids string) ([]config.Username, error) {
 	var player_list []config.Username
 	for _, uuid := range strings.Split(uuids, ",") {
-		if config.CheckBlacklist(uuid) {
+		if config.Config_file.CheckBlacklist(uuid) {
 			continue
 		}
 		log.Println("Retriving display name for player " + uuid + "...")

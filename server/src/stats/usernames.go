@@ -74,7 +74,7 @@ func collectUsernames(serverPath string) ([]config.Username, error) {
 	for _, filePath := range filesToUpdate {
 		var data []config.Username
 		if config.Config_file.Scan.Blacklist.ExOps && filePath == serverPath+"ops.json" {
-			config.UpdateConfigBlacklist(data)
+			config.Config_file.UpdateConfigBlacklist(data)
 		}
 		file, err := os.ReadFile(filePath)
 		if err != nil {
@@ -97,7 +97,7 @@ func collectUsernames(serverPath string) ([]config.Username, error) {
 		if err != nil {
 			return nil, err
 		}
-		config.UpdateConfigBlacklist(banned_data)
+		config.Config_file.UpdateConfigBlacklist(banned_data)
 	}
 	return names, nil
 }

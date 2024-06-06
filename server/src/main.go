@@ -21,7 +21,7 @@ func main() {
 
 	// Read config.json and make it accessible to go-mine-stats.
 	config.Config_file = config.LoadConfig(configPath)
-	if config.SanityCheck(config.Config_file) {
+	if config.Config_file.CheckSanity() {
 		log.Println("Config passed sanity check.")
 	}
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"slices"
 )
 
 var (
@@ -48,6 +49,12 @@ type config_struct struct {
 	Scan       scan_config_struct     `json:"polling"`
 }
 
+type ConfigFile interface {
+	CheckSanity() bool
+	UpdateConfigBlacklist()
+	CheckBlacklist() bool
+}
+
 func LoadConfig(path string) *config_struct {
 	config_json, err := os.ReadFile(path)
 	log_error(err, "Error while reading config file:")
@@ -59,9 +66,9 @@ func LoadConfig(path string) *config_struct {
 	return &config
 }
 
-func SanityCheck(config_file *config_struct) bool {
+func (c *config_struct) CheckSanity() bool {
 	var world_name_list []string
-	for _, server_object := range config_file.ServerList {
+	for _, server_object := range c.ServerList {
 		for _, world_name_exist := range world_name_list {
 			if server_object.WorldName == world_name_exist {
 				log.Fatal("Error: Duplicate 'world_names' detected! Please change the name of your world.")
@@ -71,4 +78,19 @@ func SanityCheck(config_file *config_struct) bool {
 	}
 
 	return true
+}
+
+type Username struct {
+	Name string `json:"name"`
+	Uuid string `json:"uuid"`
+}
+
+func (c *config_struct) UpdateConfigBlacklist(list []Username) {
+	for _, list := range list {
+		c.Scan.Blacklist.List = append(Config_file.Scan.Blacklist.List, list.Uuid)
+	}
+}
+
+func (c *config_struct) CheckBlacklist(uuid string) bool {
+	return slices.Contains(c.Scan.Blacklist.List, uuid)
 }

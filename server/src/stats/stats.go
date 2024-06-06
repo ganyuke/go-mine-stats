@@ -18,10 +18,6 @@ func log_error(err error, context string) {
 	}
 }
 
-var (
-	old_tracker *old_file_info
-)
-
 const (
 	logFileDates = iota
 	importStatistics
@@ -31,18 +27,6 @@ const (
 type player_statistics struct {
 	Stats       map[string]map[string]int `json:"stats"`
 	DataVersion int                       `json:"DataVersion"`
-}
-
-type old_file_info struct {
-	size map[string]int64
-	date map[string]time.Time
-}
-
-func (metadata *old_file_info) updateRecord(filePath string, fileInfo fs.FileInfo) time.Time {
-	metadata.size[filePath] = fileInfo.Size()
-	metadata.date[filePath] = fileInfo.ModTime()
-	date := fileInfo.ModTime().UTC().Round(time.Second)
-	return date
 }
 
 func collectPlayerStat(file_location, uuid, world string, date time.Time) player_statistics {
@@ -123,10 +107,6 @@ player:
 	updateUuidToUsernameList(serverDirectory, statsFilesUuids)
 }
 
-func InitFileTracking() {
-	old_tracker = &old_file_info{size: map[string]int64{}, date: map[string]time.Time{}}
-}
-
 func CollectAllStats(get_stats bool) {
 	for _, v := range config.Config_file.ServerList {
 		var get_stats_for_world int
@@ -151,18 +131,4 @@ func CollectAllStats(get_stats bool) {
 
 		Poll_official.Monitor(stats_directory)
 	}
-}
-
-func pollDir(file_path string) {
-	directory_members, err := os.ReadDir(file_path)
-	concat := strings.Split(file_path, "/")
-	world_name := concat[len(concat)-2]
-
-	if err != nil {
-		Poll_official.Remove(file_path)
-		log.Println("Directory " + file_path + " no longer found. Removing from monitoring.")
-		return
-	}
-
-	loopStats(file_path, world_name, directory_members, checkImportStatistics)
 }
