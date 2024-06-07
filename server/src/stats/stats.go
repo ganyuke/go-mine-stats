@@ -46,7 +46,7 @@ func collectPlayerStat(file_location, uuid, world string, date time.Time) player
 		for statistic, value := range items {
 			player_stat := &db.Stat_item{
 				Uuid:     uuid,
-				Date:     date,
+				Date:     date.Format("RFC3339Nano"),
 				Category: category,
 				Item:     statistic,
 				Value:    value,

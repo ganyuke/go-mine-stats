@@ -25,29 +25,39 @@ type data struct {
 	queryTotal         *sql.Stmt
 	queryDate          *sql.Stmt
 	queryIndividual    *sql.Stmt
-	insertNew          *sql.Stmt
-	insertHistorical   *sql.Stmt
-	updateRow          *sql.Stmt
-	checkExist         *sql.Stmt
-	checkDifference    *sql.Stmt
-	checkWorld         *sql.Stmt
-	insertUsername     *sql.Stmt
+	insertData         *sql.Stmt
 	getUsername        *sql.Stmt
-	queryUuids         *sql.Stmt
 	queryUsernameUuids *sql.Stmt
+	fkLookups          *foreignKeyLookups
+	fkInsertions       *foreignKeyInsertions
+}
+
+type foreignKeyLookups struct {
+	queryPlayer    *sql.Stmt
+	queryStatistic *sql.Stmt
+	queryCategory  *sql.Stmt
+	queryWorld     *sql.Stmt
+}
+
+type foreignKeyInsertions struct {
+	insertPlayer    *sql.Stmt
+	insertStatistic *sql.Stmt
+	insertCategory  *sql.Stmt
+	insertWorld     *sql.Stmt
 }
 
 type statement_order struct {
 	asc  *sql.Stmt
 	desc *sql.Stmt
 }
+
 type Stat_item struct {
-	Uuid     string    `json:"uuid"`
-	Category string    `json:"category"`
-	Item     string    `json:"stat"`
-	Value    int       `json:"value"`
-	Date     time.Time `json:"date"`
-	World    string    `json:"world"`
+	Uuid     string `json:"uuid"`
+	Category string `json:"category"`
+	Item     string `json:"stat"`
+	Value    int    `json:"value"`
+	Date     string `json:"date"`
+	World    string `json:"world"`
 }
 
 type Stat_total struct {
@@ -58,19 +68,15 @@ type Stat_total struct {
 }
 
 type Stat_cumulative struct {
-	Category string    `json:"category"`
-	Item     string    `json:"stat"`
-	Value    int       `json:"value"`
-	Date     time.Time `json:"date"`
-	World    string    `json:"world"`
+	Category string `json:"category"`
+	Item     string `json:"stat"`
+	Value    int    `json:"value"`
+	Date     string `json:"date"`
+	World    string `json:"world"`
 }
 
 type Update_data struct {
 	Statistics []*Stat_item
-}
-
-type checkers struct {
-	chess int
 }
 
 func UpdatePlayerStat(data *Update_data) error {
@@ -96,47 +102,109 @@ func UpdatePlayerStat(data *Update_data) error {
 		world := player_entries.World
 		value := player_entries.Value
 
-		var check_obj checkers
-
-		err := Monika.checkDifference.QueryRowContext(ctx, uuid, category, item, value, world).Scan(&check_obj.chess)
-		log_error(err, "E_SCAN_FAIL")
+		// Get the player id for the transaction.
+		// If the player does not exist in the players table, create
+		// a stub entry for them
+		var playerId int64
+		err := Monika.fkLookups.queryPlayer.QueryRowContext(ctx, uuid).Scan(playerId)
 		if err != nil {
-			return err
-		}
-
-		// Drop change if row is exactly the same.
-		if check_obj.chess == 1 {
-			// log.Println("No difference in statistic, dropping change... ")
-			continue
-		}
-
-		err = Monika.checkExist.QueryRowContext(ctx, uuid, category, item, world).Scan(&check_obj.chess)
-		log_error(err, "E_SCAN_FAIL")
-		if err != nil {
-			return err
-		}
-
-		// Check if the statistic already exists in the current stat table
-		if check_obj.chess == 1 {
-			// log.Println("Row exists, updating current stats...")
-			_, err = Monika.updateRow.ExecContext(ctx, date, value, uuid, category, item, world)
-			if err != nil {
-				transaction.Rollback()
-				return err
-			}
-		} else {
-			// log.Println("Row not found, creating new stat...")
-			_, err = Monika.insertNew.ExecContext(ctx, uuid, date, category, item, value, world)
-			if err != nil {
+			if err == sql.ErrNoRows {
+				var result sql.Result
+				result, err = Monika.fkInsertions.insertPlayer.ExecContext(ctx, uuid, nil)
+				if err != nil {
+					transaction.Rollback()
+					log.Fatal("Failed to create new player during transaction!")
+					return err
+				}
+				playerId, err = result.LastInsertId()
+				if err != nil {
+					transaction.Rollback()
+					log.Fatal("Failed to get row id for newly created player during transaction!")
+					return err
+				}
+			} else {
 				transaction.Rollback()
 				return err
 			}
 		}
 
-		// Add statistic to historical table for tracking over time
-		_, err = Monika.insertHistorical.ExecContext(ctx, uuid, date, category, item, value, world)
+		// Ditto for the category
+		var categoryId int64
+		err = Monika.fkLookups.queryCategory.QueryRowContext(ctx, category).Scan(categoryId)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				var result sql.Result
+				result, err = Monika.fkInsertions.insertCategory.ExecContext(ctx, category)
+				if err != nil {
+					transaction.Rollback()
+					log.Fatal("Failed to create new player during transaction!")
+					return err
+				}
+				categoryId, err = result.LastInsertId()
+				if err != nil {
+					transaction.Rollback()
+					log.Fatal("Failed to get row id for newly created player during transaction!")
+					return err
+				}
+			} else {
+				transaction.Rollback()
+				return err
+			}
+		}
+
+		// Ditto for statistic, though we need to use the previously found categoryId
+		var statisticId int64
+		err = Monika.fkLookups.queryCategory.QueryRowContext(ctx, item).Scan(statisticId)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				var result sql.Result
+				result, err = Monika.fkInsertions.insertStatistic.ExecContext(ctx, categoryId, item)
+				if err != nil {
+					transaction.Rollback()
+					log.Fatal("Failed to create new statistic during transaction!")
+					return err
+				}
+				statisticId, err = result.LastInsertId()
+				if err != nil {
+					transaction.Rollback()
+					log.Fatal("Failed to get row id for newly created statistic during transaction!")
+					return err
+				}
+			} else {
+				transaction.Rollback()
+				return err
+			}
+		}
+
+		// Finally, we check for world existance
+		var worldId int64
+		err = Monika.fkLookups.queryCategory.QueryRowContext(ctx, world).Scan(worldId)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				var result sql.Result
+				result, err = Monika.fkInsertions.insertWorld.ExecContext(ctx, world, nil)
+				if err != nil {
+					transaction.Rollback()
+					log.Fatal("Failed to create new world during transaction!")
+					return err
+				}
+				worldId, err = result.LastInsertId()
+				if err != nil {
+					transaction.Rollback()
+					log.Fatal("Failed to get row id for newly created world during transaction!")
+					return err
+				}
+			} else {
+				transaction.Rollback()
+				return err
+			}
+		}
+
+		// Now we can finally add a single entry to the data table
+		_, err = Monika.insertData.ExecContext(ctx, playerId, statisticId, value, date, worldId)
 		if err != nil {
 			transaction.Rollback()
+			log.Fatal("Failed to insert new data into table!")
 			return err
 		}
 
@@ -164,7 +232,7 @@ func RetrievePlayerStat(uuid, category, item, world string) (Stat_item, error) {
 		log.Print(err)
 		return stat_obj, err
 	}
-	log.Printf("UUID:%s, Category:%s, Item:%s, Value:%d, Mod. Date:%d\n", stat_obj.Uuid,
+	log.Printf("UUID:%s, Category:%s, Item:%s, Value:%d, Mod. Date:%s\n", stat_obj.Uuid,
 		stat_obj.Category, stat_obj.Item, stat_obj.Value, stat_obj.Date)
 	return stat_obj, err
 }
@@ -255,7 +323,7 @@ func GetCumulativeStat(category, item, world, order string, startDate, endDate t
 func GetWorld(world string) bool {
 	log.Println("Checking if \"" + world + "\" in database...")
 	var exists int
-	row := Monika.checkWorld.QueryRow(world)
+	row := Monika.fkLookups.queryWorld.QueryRow(world)
 	err := row.Scan(&exists)
 	if err != nil {
 		log.Print(err)
@@ -265,19 +333,13 @@ func GetWorld(world string) bool {
 
 func InsertUsernames(list []config.Username) error {
 	for _, obj := range list {
-		_, err := Monika.insertUsername.Exec(obj.Uuid, obj.Name)
+		_, err := Monika.fkInsertions.insertPlayer.Exec(obj.Uuid, obj.Name)
 		if err != nil {
 			log_error(err, "E_INSERT_FAIL")
 			return err
 		}
 	}
 	return nil
-}
-
-func GetUuidsFromStats() []config.Username {
-	rows, err := Monika.queryUuids.Query()
-	log_error(err, "E_QUERY_FAIL")
-	return makeListUsernames(rows)
 }
 
 func GetPlayers() []config.Username {
@@ -343,8 +405,8 @@ func makeList(rows *sql.Rows) []Stat_item {
 	var list []Stat_item
 	for rows.Next() {
 		rows.Scan(&stat_obj.Uuid, &stat_obj.Category, &stat_obj.Item, &stat_obj.Value, &stat_obj.Date, &stat_obj.World)
-		log.Printf("UUID: %s, Category: %s, Item: %s, Value: %d, Mod. Date: %d\n", stat_obj.Uuid,
-			stat_obj.Category, stat_obj.Item, stat_obj.Value, stat_obj.Date.UTC())
+		log.Printf("UUID: %s, Category: %s, Item: %s, Value: %d, Mod. Date: %s\n", stat_obj.Uuid,
+			stat_obj.Category, stat_obj.Item, stat_obj.Value, stat_obj.Date)
 		list = append(list, stat_obj)
 	}
 	return list
@@ -360,36 +422,11 @@ func DbConnect(firstRun bool, dbPath string) *data {
 }
 
 func initDb(db *sql.DB) {
-	tables := `
-	CREATE TABLE usernames (
-		num INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-		uuid TEXT UNIQUE NOT NULL,
-		name TEXT NOT NULL
-	);
-	CREATE TABLE stats (
-		num INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-		uuid TEXT NOT NULL,
-		date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		stat_category TEXT NOT NULL,
-		stat_name TEXT NOT NULL,
-		value INTEGER NOT NULL,
-		world TEXT NOT NULL,
-		FOREIGN KEY (uuid) REFERENCES usernames (uuid)
-	);	
-	CREATE TABLE historical_stats (
-		num INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-		uuid TEXT NOT NULL,
-		date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		stat_category TEXT NOT NULL,
-		stat_name TEXT NOT NULL,
-		value INTEGER NOT NULL,
-		world TEXT NOT NULL,
-		FOREIGN KEY (uuid) REFERENCES usernames (uuid)
-	);
-	`
+	tables := dbTable
 	_, err := db.Exec(tables)
 	log_error(err, "E_TABLE_FAIL")
-	log.Println("Database created.")
+	Monika.db.Exec("PRAGMA user_version = 1")
+	log.Println("New database created.")
 }
 
 func prepareStatements(connection *sql.DB) *data {
@@ -403,56 +440,50 @@ func prepareStatements(connection *sql.DB) *data {
 		db: connection,
 		queryCategory: &statement_order{
 			asc: prepareFunc(
-				`SELECT uuid, stat_category, stat_name, value, date, world 
-				FROM stats
-				WHERE stat_category = ? AND world = ?
-				GROUP BY uuid
-				ORDER BY value ASC
-				LIMIT ?`,
+				`select name, category, statistic, value, max(date), world_path from denormal
+				where category = ? and world_path = ?
+				group by name, category, statistic, world_path
+				order by value asc
+				limit ?`,
 			),
 			desc: prepareFunc(
-				`SELECT uuid, stat_category, stat_name, value, date, world 
-				FROM stats
-				WHERE stat_category = ? AND world = ?
-				GROUP BY uuid
-				ORDER BY value DESC
-				LIMIT ?`,
+				`select name, category, statistic, value, max(date), world_path from denormal
+				where category = ? and world_path = ?
+				group by name, category, statistic, world_path
+				order by value desc
+				limit ?`,
 			),
 		},
 		queryTop: &statement_order{
 			asc: prepareFunc(
-				`SELECT uuid, stat_category, stat_name, value, date, world 
-				FROM stats
-				WHERE stat_category = ? AND stat_name = ? AND world = ?
-				GROUP BY uuid
-				ORDER BY value ASC
-				LIMIT ?`,
+				`select name, category, statistic, value, max(date), world_path from denormal
+				where category = ? and statistic = ? and world_path = ?
+				group by name, category, statistic, world_path
+				order by value asc
+				limit ?`,
 			),
 			desc: prepareFunc(
-				`SELECT uuid, stat_category, stat_name, value, date, world 
-				FROM stats
-				WHERE stat_category = ? AND stat_name = ? AND world = ?
-				GROUP BY uuid
-				ORDER BY value DESC
-				LIMIT ?`,
+				`select name, category, statistic, value, max(date), world_path from denormal
+				where category = ? and statistic = ? and world_path = ?
+				group by name, category, statistic, world_path
+				order by value desc
+				limit ?`,
 			),
 		},
 		queryTotalCategory: &statement_order{
 			asc: prepareFunc(
-				`SELECT stat_category, stat_name, SUM(value) AS sumVal, world 
-				FROM stats 
-				WHERE stat_category = ? AND world = ?
-				GROUP BY stat_name
-				ORDER BY sumVal ASC
-				LIMIT ?`,
+				`select category, statistic, sum(value) as sumVal, world_path from denormal
+				where category = ? and world_path = ?
+				group by category, statistic, world_path
+				order by sumVal desc
+				limit ?`,
 			),
 			desc: prepareFunc(
-				`SELECT stat_category, stat_name, SUM(value) AS sumVal, world 
-				FROM stats 
-				WHERE stat_category = ? AND world = ?
-				GROUP BY stat_name
-				ORDER BY sumVal DESC 
-				LIMIT ?`,
+				`select category, statistic, sum(value) as sumVal, world_path from denormal
+				where category = ? and world_path = ?
+				group by category, statistic, world_path
+				order by sumVal desc
+				limit ?`,
 			),
 		},
 		queryCumulative: &statement_order{
@@ -460,33 +491,33 @@ func prepareStatements(connection *sql.DB) *data {
 				`with subtracting as (SELECT
 					date,
 					value,
-					LAG ( value, 1, 0 ) OVER (partition BY uuid ORDER BY date ) prev_val,
-					world,
-					stat_category,
-					stat_name
+					LAG ( value, 1, 0 ) OVER (partition BY name ORDER BY date ) prev_val,
+					world_path,
+					category,
+					statistic
 				FROM
-					historical_stats 
+					denormal 
 				WHERE
-					stat_category = ? AND
-					stat_name = ? AND 
-					world = ?),
+					category = ? AND
+					statistic = ? AND 
+					world_path = ?),
 				difference as (select
-					world,
-					stat_category,
-					stat_name, 
+					world_path,
+					category,
+					statistic, 
 					date, 
 					(value-prev_val) as diff_val from subtracting),
 				summation as (SELECT
-					stat_category,
-					stat_name,
+					category,
+					statistic,
 					date,
-					world,  
+					world_path,  
 					sum(diff_val) over (order by date) AS value from difference)
 				SELECT
-					stat_category,
-					stat_name,
+					category,
+					statistic,
 					date,
-					world,
+					world_path,
 					value
 					FROM summation
 					WHERE date BETWEEN ? AND ? 
@@ -497,33 +528,33 @@ func prepareStatements(connection *sql.DB) *data {
 				`with subtracting as (SELECT
 					date,
 					value,
-					LAG ( value, 1, 0 ) OVER (partition BY uuid ORDER BY date ) prev_val,
-					world,
-					stat_category,
-					stat_name
+					LAG ( value, 1, 0 ) OVER (partition BY name ORDER BY date ) prev_val,
+					world_path,
+					category,
+					statistic
 				FROM
-					historical_stats 
+					denormal 
 				WHERE
-					stat_category = ? AND
-					stat_name = ? AND 
-					world = ?),
+					category = ? AND
+					statistic = ? AND 
+					world_path = ?),
 				difference as (select
-					world,
-					stat_category,
-					stat_name, 
+					world_path,
+					category,
+					statistic, 
 					date, 
 					(value-prev_val) as diff_val from subtracting),
 				summation as (SELECT
-					stat_category,
-					stat_name,
+					category,
+					statistic,
 					date,
-					world,  
+					world_path,  
 					sum(diff_val) over (order by date) AS value from difference)
 				SELECT
-					stat_category,
-					stat_name,
+					category,
+					statistic,
 					date,
-					world,
+					world_path,
 					value
 					FROM summation
 					WHERE date BETWEEN ? AND ? 
@@ -532,98 +563,82 @@ func prepareStatements(connection *sql.DB) *data {
 			),
 		},
 		queryTotalStat: prepareFunc(
-			`SELECT stat_category, stat_name, SUM(value), world 
-			FROM stats 
-			WHERE stat_category = ? AND stat_name = ? AND world = ?
+			`select category, statistic, sum(value) over(), world_path from (
+				select name, category, statistic, value, world_path from denormal
+				where category = ? and statistic = ? and world_path = ?
+				order by date desc 
+				) group by name
+				limit 1
 			`,
 		),
 		queryTotal: prepareFunc(
-			`SELECT stat_category, SUM(value), world 
-			FROM stats 
-			WHERE stat_category = ? AND world = ?
+			`select category, sum(value), world_path from denormal
+			where category = ? and world_path = ?
+			group by category, world_path
 			`,
 		),
 		queryIndividual: prepareFunc(
-			`SELECT uuid, stat_category, stat_name, value, date, world 
-			FROM stats 
-			WHERE uuid = ? AND stat_category = ? AND stat_name = ? AND world = ?
-			ORDER BY date DESC 
-			LIMIT 1`,
+			`select name, category, statistic, value, date, world_path from denormal
+			where name = ? and category = ? and statistic = ? and world_path = ?
+			order by date desc`,
 		),
 		queryDate: prepareFunc(
-			`SELECT uuid, stat_category, stat_name, value, date, world
-			FROM historical_stats WHERE uuid = ? AND stat_category = ? AND stat_name = ? AND world = ? 
+			`select name, category, statistic, value, date, world_path
+			FROM denormal WHERE name = ? AND category = ? AND statistic = ? AND world_path = ? 
 			AND date
-			BETWEEN COALESCE( (SELECT date FROM historical_stats WHERE date <= ? LIMIT 1),? )
+			BETWEEN COALESCE( (SELECT date FROM denormal WHERE date <= ? LIMIT 1),? )
 			  AND ?`,
-		),
-		insertNew: prepareFunc(
-			`INSERT INTO stats 
-			(uuid, date, stat_category, stat_name, value, world) 
-			VALUES (?, ?, ?, ?, ?, ?)`,
-		),
-		insertHistorical: prepareFunc(
-			`INSERT INTO historical_stats 
-			(uuid, date, stat_category, stat_name, value, world) 
-			VALUES (?, ?, ?, ?, ?, ?)`,
-		),
-		updateRow: prepareFunc(
-			`
-			UPDATE stats
-			SET date = ?, value = ?
-			WHERE uuid = ? AND stat_category = ? AND stat_name = ? AND world = ?
-			`,
-		),
-		checkExist: prepareFunc(
-			`SELECT EXISTS(
-				SELECT 1 
-				FROM stats 
-				WHERE uuid = ? AND stat_category = ? AND stat_name = ? AND world = ? 
-				LIMIT 1);
-			`,
-		),
-		checkDifference: prepareFunc(
-			`SELECT EXISTS(
-				SELECT 1 
-				FROM stats 
-				WHERE uuid = ? AND stat_category = ? AND stat_name = ? AND value = ? AND world = ?
-				LIMIT 1);
-			`,
-		),
-		checkWorld: prepareFunc(
-			`SELECT EXISTS(
-				SELECT 1 
-				FROM stats 
-				WHERE world = ?
-				LIMIT 1);
-			`,
-		),
-		insertUsername: prepareFunc(
-			`INSERT INTO usernames 
-			(uuid, name) 
-			VALUES (?, ?)
-			ON CONFLICT(uuid) DO
-			UPDATE SET name=excluded.name`,
 		),
 		getUsername: prepareFunc(
 			`SELECT uuid, name
-			FROM usernames
+			FROM players
 			WHERE uuid = ?
 			LIMIT 1;
 			`,
 		),
-		queryUuids: prepareFunc(
-			`SELECT uuid
-			FROM stats
-			GROUP BY uuid
-			`,
-		),
 		queryUsernameUuids: prepareFunc(
 			`SELECT uuid, name
-			FROM usernames
-			GROUP BY uuid
+			FROM players
 			`,
 		),
+		insertData: prepareFunc(
+			`insert into data(player, statistic, value, date, world)
+			 values (?,?,?,?,?)
+			 `,
+		),
+		fkLookups: &foreignKeyLookups{
+			queryPlayer: prepareFunc(
+				`select distinct id from players
+				where uuid = ?`,
+			),
+			queryStatistic: prepareFunc(
+				`select distinct statistics.id from statistics
+				where category = ? and statistic = ?`,
+			),
+			queryCategory: prepareFunc(
+				`select distinct id from categories
+				where category = ?`,
+			),
+			queryWorld: prepareFunc(
+				`select distinct id from worlds
+				where world_path = ?`,
+			),
+		},
+		fkInsertions: &foreignKeyInsertions{
+			insertPlayer: prepareFunc(
+				`INSERT INTO players(uuid, name) VALUES(?, ?)
+				ON CONFLICT(uuid) DO UPDATE SET name=excluded.name;`,
+			),
+			insertCategory: prepareFunc(
+				`INSERT INTO categories(category) VALUES(?);`,
+			),
+			insertStatistic: prepareFunc(
+				`INSERT INTO statistics(category, statistic) VALUES(?, ?);`,
+			),
+			insertWorld: prepareFunc(
+				`INSERT INTO worlds(world_path, world_name) VALUES(?, ?);`,
+			),
+		},
 	}
 	return init_data
 }
